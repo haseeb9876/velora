@@ -1,0 +1,11 @@
+# Set VELORA_HOSTNAME to a hostname that resolves to your public IP.
+# This requires reachable ports 80/443 and Caddy installed/configured separately.
+{$VELORA_HOSTNAME} {
+    reverse_proxy 127.0.0.1:8787 {
+        header_up X-Forwarded-For {remote_host}
+    }
+    header {
+        X-Content-Type-Options nosniff
+        Referrer-Policy no-referrer
+    }
+}

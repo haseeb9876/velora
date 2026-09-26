@@ -1,0 +1,20 @@
+[Unit]
+Description=Velora video worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ubuntu/devops/Downloading-platform
+ExecStart=/bin/bash /home/ubuntu/devops/Downloading-platform/scripts/start-worker.sh
+Restart=on-failure
+RestartSec=5
+KillMode=control-group
+TimeoutStopSec=15
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/ubuntu/devops/Downloading-platform/worker/data
+
+[Install]
+WantedBy=default.target

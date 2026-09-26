@@ -1,0 +1,15 @@
+.venv/
+.tools/
+worker/
+scripts/
+tests/
+docs/
+deploy/
+test-results/
+playwright-report/
+node_modules/
+.env*
+*.log
+*.tsbuildinfo
+playwright*.ts
+VERIFICATION.md
