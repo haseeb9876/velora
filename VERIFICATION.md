@@ -5,8 +5,8 @@ Verified on 26 September 2026 in the connected Ubuntu workspace.
 ## Automated
 
 - Production TypeScript/Vite build passed.
-- 26 backend checks passed: validation, blocked network destinations, signed tokens, job ownership, playlist selection/processing, rate limiting, real FFmpeg processing.
-- 6 browser checks passed across desktop (1440px) and mobile (390px): analysis, quality/audio choices, queue, theme, dialogs, installation guidance, platform errors, horizontal overflow.
+- 28 backend checks passed: validation, blocked network destinations, signed tokens, job ownership, playlist selection/processing, rate limiting, real FFmpeg processing.
+- 8 browser checks passed across desktop (1440px) and mobile (390px): analysis, quality/audio choices, queue, theme, dialogs, installation guidance, platform errors, horizontal overflow, idle polling and foreground refresh.
 - Production PWA test passed: manifest, PNG icons, share-target configuration and offline shell after a previous online visit. This is not a substitute for installation testing on a physical iPhone/Android phone.
 - Frontend dependency audit reported zero vulnerabilities when dependencies were installed.
 
@@ -25,9 +25,12 @@ Temporary live-test downloads were removed after verification. Automated tests u
 
 ## Deployment state
 
-- No Vercel deployment or Neon project/connection was created.
-- Local SQLite mode was tested. Neon-compatible SQL is implemented but has not been exercised against an actual Neon database.
-- No public Ubuntu endpoint is configured. Cloudflare free tunnels are not recommended for this application's media delivery; see the README's corrected HTTPS options.
+- Public Vercel deployment is ready at https://velora-downloader.vercel.app and returns HTTP 200 without authentication.
+- Public GitHub repository: https://github.com/haseeb9876/velora.
+- Neon Free project is connected; schema creation and a temporary write/read/cleanup check passed against the actual database.
+- Tailscale Funnel is enabled at https://velora-worker.tail4314ba.ts.net; both Ubuntu user services are enabled and active.
+- A real Facebook video-with-audio download and MP3 download passed through the public HTTPS worker using the production app origin. Saved files were checked with FFprobe and test downloads removed.
+- The deployed app also passed a real mobile-viewport browser flow: live Facebook analysis, highest available 1440p download saved with AV1 video (1440 × 2560) and AAC audio, no horizontal overflow, and an offline PWA shell after visiting online. Test files were removed.
 - No paid plan or resource was enabled.
 
-The application is a working local beta, not a guarantee of unrestricted social-platform downloads or production availability.
+This is a deployed small beta, not a guarantee of unrestricted social-platform downloads or uninterrupted availability. Ubuntu must remain awake and online. See [DEPLOYMENT.md](DEPLOYMENT.md).

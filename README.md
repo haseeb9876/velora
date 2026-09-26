@@ -1,5 +1,11 @@
 # Velora
 
+Live app: https://velora-downloader.vercel.app
+
+Source: https://github.com/haseeb9876/velora
+
+The connected Ubuntu installation is deployed. See [DEPLOYMENT.md](DEPLOYMENT.md) for its services and current URLs. The steps below also support a fresh installation.
+
 A responsive, installable social-video downloader for a small, free beta. React + TypeScript provides the interface; an Ubuntu Python worker uses yt-dlp and FFmpeg to analyze and prepare media. Neon Postgres is optional; local SQLite works immediately with no account or subscription.
 
 ## Run locally
@@ -71,7 +77,7 @@ Existing SQLite records are not migrated automatically. Switching databases star
 
 ### Expose Ubuntu over HTTPS
 
-A public HTTPS worker endpoint is required before remote users can download. It has not been configured automatically.
+A public HTTPS worker endpoint is required before remote users can download. This deployment uses Tailscale Funnel; current details are in [DEPLOYMENT.md](DEPLOYMENT.md). The alternatives below describe setup on another machine.
 
 **Option A — eligible personal testing with Tailscale Funnel.** [Funnel](https://tailscale.com/docs/features/tailscale-funnel) can publish a local service on an HTTPS `*.ts.net` hostname. It is available on all plans, has bandwidth limits, and requires a Tailscale login and enabling Funnel for the device. The [free Personal plan](https://tailscale.com/pricing) is only for non-commercial use; do not assume a commercial beta qualifies because it is free to visitors.
 
@@ -95,11 +101,20 @@ Follow the CLI's account/HTTPS setup instructions. Keep the process running. Set
 4. Set the exact deployed `https://…vercel.app` origin in the worker's `ALLOWED_ORIGINS`, then restart the worker.
 5. Test `/api/health` on the worker URL, inspect a permitted public video in the UI, download both video and audio, and test installation on real devices.
 
-The generated Vercel hostname is subject to availability. No deployment, public endpoint or external account has been created automatically.
+The generated Vercel hostname is subject to availability. Deployment status and current service URLs are recorded in `DEPLOYMENT.md`. Credentials are kept on Ubuntu and are not included in this repository.
 
-### Optional user service
+### Ubuntu services
 
-After you have confirmed manual startup works, the provided `scripts/velora-worker.service` can run as an Ubuntu user service. Adjust absolute paths if needed, create `worker/data`, copy the unit into `~/.config/systemd/user/`, then run `systemctl --user daemon-reload` and `systemctl --user enable --now velora-worker`. Systemd support and user-session persistence vary by machine. The HTTPS reverse proxy or Funnel needs its own running process/service. Do not expose port 8787 directly to the internet.
+The deployment setup uses two user services, `velora-worker.service` and `velora-connector.service`, to keep the worker and userspace HTTPS connector running when setup terminals close. Their templates are in `scripts/`. The connector uses project-local Tailscale binaries and persisted state under the ignored `worker/data/tailscale/` directory. It does not install a system VPN interface.
+
+```bash
+systemctl --user status velora-worker velora-connector
+systemctl --user restart velora-worker
+```
+
+User services depend on the Ubuntu user's service manager. Without user lingering they may stop after all login sessions end. The machine must stay powered on, awake and connected; stopping/suspending it prevents remote downloads. No power or router settings are changed automatically.
+
+For another Ubuntu installation, adjust paths in the service templates, copy them to `~/.config/systemd/user/`, run `systemctl --user daemon-reload`, then enable/start both services after configuring the environment and connector sign-in.
 
 ## Security and privacy
 
@@ -108,7 +123,7 @@ After you have confirmed manual startup works, the provided `scripts/velora-work
 - Extractor-provided opaque format IDs are stored server-side; clients cannot supply command-line options, output paths or executable commands. Subprocesses use argument arrays, not a shell.
 - Signed anonymous sessions isolate queues; signed download tickets expire after ten minutes. Treat tickets as bearer credentials. Access logging is disabled by the supplied startup script to avoid recording ticket URLs.
 - CORS uses an explicit origin list. Rate limiting is process-local, and is a small-beta control rather than a distributed anti-abuse service. CORS alone does not stop scripts outside browsers.
-- Files expire after two hours; job metadata after 24 hours; analyses after 30 minutes. Cleanup runs once a minute while online and after restart. Clearing browser data loses access to existing jobs.
+- Files expire after two hours; job metadata after 24 hours; analyses after 30 minutes. File expiry is checked locally once a minute; expired database metadata is deleted hourly and at startup so an idle Neon compute can sleep. Clearing browser data loses access to existing jobs.
 - Private content, account-cookie imports, DRM bypasses, and paywall access are not implemented. Use only content you own or have permission to download and comply with source-platform terms.
 
 ## Checks

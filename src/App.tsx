@@ -96,9 +96,14 @@ export default function App() {
   );
   const resultRef = useRef<HTMLDivElement>(null);
   const requestRef = useRef<AbortController | null>(null);
+  const pendingJobs = useRef(false);
   const activeCount = jobs.filter(
     (j) => j.status === "queued" || j.status === "processing",
   ).length;
+
+  useEffect(() => {
+    pendingJobs.current = activeCount > 0;
+  }, [activeCount]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -127,6 +132,11 @@ export default function App() {
   }, []);
   useEffect(() => {
     let alive = true;
+    let refreshHistory = true;
+    const onVisible = () => {
+      if (!document.hidden) refreshHistory = true;
+    };
+    document.addEventListener("visibilitychange", onVisible);
     let timer: ReturnType<typeof setTimeout>;
     async function poll() {
       try {
@@ -134,8 +144,28 @@ export default function App() {
         if (!alive) return;
         setHealth(info);
         setConnection("online");
-        const data = await api<{ jobs: Job[] }>("/api/jobs");
-        if (alive) setJobs(data.jobs);
+        if (refreshHistory || pendingJobs.current) {
+          const data = await api<{ jobs: Job[] }>("/api/jobs");
+          if (alive) setJobs(data.jobs);
+          refreshHistory = false;
+        } else {
+          setJobs((current) =>
+            current.some(
+              (j) =>
+                j.status === "ready" &&
+                j.expires &&
+                j.expires * 1000 <= Date.now(),
+            )
+              ? current.map((j) =>
+                  j.status === "ready" &&
+                  j.expires &&
+                  j.expires * 1000 <= Date.now()
+                    ? { ...j, status: "expired" }
+                    : j,
+                )
+              : current,
+          );
+        }
       } catch {
         if (alive) setConnection("offline");
       }
@@ -144,6 +174,7 @@ export default function App() {
     void poll();
     return () => {
       alive = false;
+      document.removeEventListener("visibilitychange", onVisible);
       clearTimeout(timer);
     };
   }, []);
@@ -1107,9 +1138,10 @@ export default function App() {
                 after 24 hours and analyses after 30 minutes.
               </p>
               <p>
-                Your IP address is used temporarily for rate limiting. The
-                hosting and tunnel providers may also process connection
-                information. Video thumbnails load from the source platform.
+                Expired metadata is removed during an hourly cleanup. Your IP
+                address is used temporarily for rate limiting. The hosting and
+                tunnel providers may also process connection information. Video
+                thumbnails load from the source platform.
               </p>
               <p>
                 Your theme preference and session token are stored on this

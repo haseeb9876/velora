@@ -3,13 +3,18 @@
 Usage: .venv/bin/python scripts/smoke-live.py 'https://...'
 Saves only to a temporary directory and removes worker files when finished.
 """
-import json, subprocess, sys, tempfile, time
+import argparse, json, subprocess, sys, tempfile, time
 from pathlib import Path
 import httpx
 
 def main():
-    url=sys.argv[1]
-    with httpx.Client(base_url='http://127.0.0.1:8787',timeout=100) as client:
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('url')
+    parser.add_argument('--base-url',default='http://127.0.0.1:8787')
+    parser.add_argument('--origin',default='')
+    args=parser.parse_args()
+    url=args.url
+    with httpx.Client(base_url=args.base_url,timeout=100,headers={'Origin':args.origin} if args.origin else {}) as client:
         token=client.post('/api/session').json()['token']
         client.headers['Authorization']='Bearer '+token
         response=client.post('/api/inspect',json={'url':url})

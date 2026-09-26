@@ -32,6 +32,8 @@ jobs_queue = queue.Queue(config.MAX_QUEUE)
 lock = threading.RLock()
 active = {}
 processes = {}
+retained = {}
+last_metadata_cleanup = 0
 stopping = threading.Event()
 inspect_slots = threading.BoundedSemaphore(2)
 rates = defaultdict(deque)
@@ -80,6 +82,9 @@ def run_worker():
             else:
                 job.update(status='ready', progress=100, file=str(path), size=path.stat().st_size, expires=time.time() + config.TTL)
             save(job)
+            if job['status'] == 'ready':
+                with lock:
+                    retained[id] = job['expires']
         except Exception as exc:
             if job:
                 if job['status'] != 'cancelled':
@@ -94,33 +99,51 @@ def run_worker():
                 processes.pop(id, None)
             jobs_queue.task_done()
 
+def cleanup_once(now=None):
+    global last_metadata_cleanup
+    now = time.time() if now is None else now
+    with lock:
+        expired = [id for id, expires in retained.items() if expires <= now]
+    for id in expired:
+        clean_folder(id)
+        job = store.get(id, 'job')
+        if job and job['status'] == 'ready':
+            job.update(status='expired', file=None)
+            save(job)
+        with lock:
+            retained.pop(id, None)
+    # Let Neon's compute sleep between visits instead of waking it every minute.
+    if now - last_metadata_cleanup >= 3600:
+        store.cleanup()
+        last_metadata_cleanup = now
+    with lock:
+        cutoff = now - 3600
+        for key in list(rates):
+            while rates[key] and rates[key][0] < cutoff:
+                rates[key].popleft()
+            if not rates[key]:
+                del rates[key]
+
 def janitor():
     while not stopping.wait(60):
         try:
-            for job in store.list('job', include_expired=True):
-                if job['status'] == 'ready' and job.get('expires', 0) < time.time():
-                    clean_folder(job['id'])
-                    job.update(status='expired', file=None)
-                    save(job)
-            store.cleanup()
-            with lock:
-                cutoff = time.time() - 3600
-                for key in list(rates):
-                    while rates[key] and rates[key][0] < cutoff:
-                        rates[key].popleft()
-                    if not rates[key]:
-                        del rates[key]
+            cleanup_once()
         except Exception:
             logger.exception('Cleanup failed')
 
 @asynccontextmanager
 async def lifespan(app):
-    global store, proxy
+    global store, proxy, last_metadata_cleanup
     stopping.clear()
     store = Store()
+    store.cleanup()
+    last_metadata_cleanup = time.time()
+    retained.clear()
     server, proxy = start_proxy()
     # Files and subprocesses cannot survive a worker restart reliably.
     for job in store.list('job', include_expired=True):
+        if job['status'] == 'ready':
+            retained[job['id']] = job.get('expires', 0)
         if job['status'] in ('queued', 'processing'):
             job.update(status='failed', error='The worker restarted. Please start this download again.')
             clean_folder(job['id'])
@@ -291,6 +314,7 @@ def cancel(id: str, user=Depends(owner)):
             job.update(status='cancelled', file=None)
             save(job)
             clean_folder(id)
+            retained.pop(id, None)
     return {'ok':True}
 
 @app.post('/api/jobs/{id}/ticket')

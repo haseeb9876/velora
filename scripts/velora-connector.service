@@ -1,0 +1,20 @@
+[Unit]
+Description=Velora HTTPS connector (Tailscale userspace)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ubuntu/devops/Downloading-platform
+ExecStart=/bin/bash /home/ubuntu/devops/Downloading-platform/scripts/start-connector.sh
+Restart=on-failure
+RestartSec=5
+KillMode=control-group
+TimeoutStopSec=20
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/ubuntu/devops/Downloading-platform/worker/data /home/ubuntu/.local/share/tailscale
+
+[Install]
+WantedBy=default.target

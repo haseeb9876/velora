@@ -136,3 +136,33 @@ test("source failures do not invent downloads", async ({ page }) => {
     page.getByRole("button", { name: "Prepare download" }),
   ).toHaveCount(0);
 });
+
+test("idle library stops polling and refreshes when the app returns", async ({
+  page,
+}) => {
+  let historyReads = 0;
+  let healthReads = 0;
+  page.on("response", (response) => {
+    const path = new URL(response.url()).pathname;
+    if (path === "/api/jobs" && response.request().method() === "GET")
+      historyReads++;
+    if (path === "/api/health") healthReads++;
+  });
+  await page.goto("/");
+  await expect.poll(() => historyReads).toBeGreaterThan(0);
+  await expect
+    .poll(() => healthReads, { timeout: 15000 })
+    .toBeGreaterThanOrEqual(3);
+  const initialReads = historyReads;
+  const initialHealth = healthReads;
+  await expect
+    .poll(() => healthReads, { timeout: 10000 })
+    .toBeGreaterThan(initialHealth);
+  expect(historyReads).toBe(initialReads);
+  await page.evaluate(() =>
+    document.dispatchEvent(new Event("visibilitychange")),
+  );
+  await expect
+    .poll(() => historyReads, { timeout: 10000 })
+    .toBeGreaterThan(initialReads);
+});
