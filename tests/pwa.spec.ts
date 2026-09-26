@@ -16,13 +16,9 @@ test("production manifest, icons, share target, and offline shell", async ({
   await page.evaluate(() => navigator.serviceWorker.ready.then(() => true));
   await page.reload();
   await page.evaluate(() => document.fonts.ready.then(() => true));
-  await expect(
-    page.getByRole("heading", { name: /Good moments/ }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Keep what/ })).toBeVisible();
   await context.setOffline(true);
   await page.reload({ waitUntil: "domcontentloaded" });
-  await expect(
-    page.getByRole("heading", { name: /Good moments/ }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Keep what/ })).toBeVisible();
   await expect(page.getByText("Worker offline", { exact: true })).toBeVisible();
 });

@@ -62,7 +62,7 @@ def run_worker():
             save(job)
             if job.get('preset'):
                 info = media.inspect(job['url'], proxy)
-                job['option'] = media.choose(info, job['preset'])
+                job['option'] = dict(media.choose(info, job['preset']), profile=job.get('profile', 'compatible'))
                 job['title'] = info['title']
                 save(job)
             def progress(value):
@@ -89,7 +89,10 @@ def run_worker():
             if job:
                 if job['status'] != 'cancelled':
                     job.update(status='failed', error=str(exc) if isinstance(exc, ValueError) else 'The worker could not finish this download. Please try again.')
-                save(job)
+                try:
+                    save(job)
+                except Exception:
+                    logger.exception('Could not persist failed job')
                 clean_folder(id)
             if not isinstance(exc, ValueError):
                 logger.exception('Download failed')
@@ -166,6 +169,7 @@ async def lifespan(app):
         thread.join(timeout=5)
     server.shutdown()
     server.server_close()
+    store.close()
 
 app = FastAPI(title='Velora worker', version='1.0.0', lifespan=lifespan, docs_url=None, redoc_url=None)
 app.add_middleware(CORSMiddleware, allow_origins=config.ORIGINS, allow_methods=['GET','POST','DELETE'], allow_headers=['Authorization','Content-Type'])
@@ -229,9 +233,10 @@ class JobBody(BaseModel):
     option_id: str | None = Field(default=None, max_length=64)
     entry_ids: list[str] = Field(default_factory=list, max_length=50)
     preset: Literal['best','1080','720','480','mp3','m4a'] = 'best'
+    profile: Literal['compatible','original'] = 'compatible'
 
 def public_job(job):
-    return {k:v for k,v in job.items() if k not in ('owner','file','url','option','preset')}
+    return {k:v for k,v in job.items() if k not in ('owner','file','url','option','preset','profile')}
 
 @app.get('/api/health')
 def health():
@@ -272,13 +277,13 @@ def create_jobs(body: JobBody, request: Request, user=Depends(owner)):
         option = next((f for f in analysis['options'] if f['id'] == body.option_id), None)
         if not option:
             raise HTTPException(422, 'Choose an available format.')
-        pending = [{'url':analysis['url'], 'title':analysis['title'], 'option':option, 'label':option['label'] + ' · ' + option['ext'].upper()}]
+        pending = [{'url':analysis['url'], 'title':analysis['title'], 'option':dict(option, profile=body.profile), 'profile':body.profile, 'label':option['label'] + ' · ' + (option.get('sourceExt', option['ext']) if body.profile == 'original' else option['ext']).upper()}]
     else:
         selected = set(body.entry_ids)
         entries = [e for e in analysis['entries'] if e['id'] in selected]
         if not entries or len(entries) != len(selected) or len(entries) > config.MAX_PLAYLIST:
             raise HTTPException(422, 'Choose available playlist items within the beta limit.')
-        pending = [{'url':e['url'],'title':e['title'],'preset':body.preset,'label':body.preset.upper() if body.preset in ('mp3','m4a') else ('Best available' if body.preset == 'best' else body.preset + 'p or lower')} for e in entries]
+        pending = [{'url':e['url'],'title':e['title'],'preset':body.preset,'profile':body.profile,'label':body.preset.upper() if body.preset in ('mp3','m4a') else ('Best available' if body.preset == 'best' else body.preset + 'p or lower')} for e in entries]
     used = sum(f.stat().st_size for f in config.DOWNLOADS.rglob('*') if f.is_file())
     with lock:
         if used + config.MAX_CONCURRENT * config.MAX_FILE * 3 > config.MAX_STORAGE:

@@ -8,6 +8,9 @@ export type Format = {
   estimated: boolean;
   fps?: number;
   hasAudio?: boolean;
+  sourceExt?: string;
+  codec?: string;
+  requiresConversion?: boolean;
 };
 export type Entry = {
   id: string;
@@ -87,8 +90,10 @@ export async function api<T>(
     const response = await fetch(base + path, {
       ...options,
       headers: {
-        "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(options.body ? { "Content-Type": "application/json" } : {}),
+        ...(token && path !== "/api/health"
+          ? { Authorization: `Bearer ${token}` }
+          : {}),
         ...options.headers,
       },
       signal:

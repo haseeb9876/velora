@@ -27,7 +27,7 @@ def fixture_media(tmp_path,monkeypatch):
         {'format_id':'audio','url':base+'/audio.m4a','ext':'m4a','vcodec':'none','acodec':'aac','protocol':'http'}]}
     metadata=tmp_path/'info.json';metadata.write_text(json.dumps(info))
     monkeypatch.setattr(media,'command',lambda proxy:[sys.executable,'-m','yt_dlp','--ignore-config','--proxy','','--load-info-json',str(metadata)])
-    yield
+    yield info
     server.shutdown();server.server_close()
 
 @pytest.mark.parametrize('kind,ext,spec,expected',[('video','mp4','video+audio',{'video','audio'}),('audio','mp3','audio',{'audio'}),('audio','m4a','audio',{'audio'})])
@@ -39,3 +39,30 @@ def test_real_processing(fixture_media,kind,ext,spec,expected):
     streams=json.loads(result.stdout)['streams']
     assert {s['codec_type'] for s in streams}==expected
     assert path.stat().st_size>1000
+
+
+def test_cached_source_download_does_not_repeat_extraction(fixture_media, monkeypatch):
+    from source_cache import SourceCache
+    cache = SourceCache()
+    url = 'https://youtube.com/watch?v=cache-fixture'
+    cache.put((url, False), fixture_media, 3000)
+    monkeypatch.setattr(media, 'source_cache', cache)
+    monkeypatch.setattr(media, 'command', lambda proxy: [sys.executable, '-m', 'yt_dlp', '--ignore-config', '--proxy', ''])
+    job = {'id': str(uuid.uuid4()), 'url': url, 'option': {'kind': 'video', 'ext': 'mp4', 'spec': 'video+audio', 'hasAudio': True}}
+    path = media.download(job, 'unused', lambda _: None, lambda: False, lambda _: None)
+    assert path.is_file()
+    assert not (path.parent / 'source.json').exists()
+
+
+def test_expired_cached_media_urls_fall_back_to_fresh_extraction(fixture_media, monkeypatch):
+    from source_cache import SourceCache
+    cache = SourceCache()
+    url = 'https://youtube.com/watch?v=expired-fixture'
+    stale = json.loads(json.dumps(fixture_media))
+    stale['formats'][0]['url'] = stale['formats'][0]['url'].replace('video.mp4', 'removed.mp4')
+    cache.put((url, False), stale, 3000)
+    monkeypatch.setattr(media, 'source_cache', cache)
+    job = {'id': str(uuid.uuid4()), 'url': url, 'option': {'kind': 'video', 'ext': 'mp4', 'spec': 'video+audio', 'hasAudio': True}}
+    path = media.download(job, 'unused', lambda _: None, lambda: False, lambda _: None)
+    assert path.is_file()
+    assert cache.get((url, False)) is None

@@ -10,6 +10,10 @@ import time
 import uuid
 from pathlib import Path
 import config
+from source_cache import SourceCache
+from playback import finalize
+
+source_cache = SourceCache()
 from security import validate_url, platform
 from urllib.parse import urlsplit
 
@@ -39,26 +43,29 @@ def friendly_error(stderr):
 
 def inspect(url, proxy, playlist=False):
     url = validate_url(url)
-    args = command(proxy) + source_args(url) + ['--dump-single-json', '--skip-download', '--no-progress', '--playlist-end', str(config.MAX_PLAYLIST)]
-    args += ['--flat-playlist', '--yes-playlist'] if playlist else ['--no-playlist']
-    # Temporary files prevent unbounded captured subprocess output in memory.
-    with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
-        process = subprocess.Popen(args + ['--', url], stdout=out, stderr=err, start_new_session=True)
-        started = time.monotonic()
-        while process.poll() is None:
-            if time.monotonic() - started > 75 or os.fstat(out.fileno()).st_size > 16 * 1024 * 1024:
-                os.killpg(process.pid, signal.SIGKILL)
-                process.wait()
-                raise ValueError('The platform took too long to respond. Please try again.')
-            time.sleep(.15)
-        if process.returncode:
-            err.seek(0)
-            raise ValueError(friendly_error(err.read(65536).decode(errors='replace')))
-        out.seek(0)
-        try:
-            info = json.load(out)
-        except (ValueError, TypeError):
-            raise ValueError('The platform returned an unreadable response.') from None
+    info = source_cache.get((url, playlist))
+    if info is None:
+        args = command(proxy) + source_args(url) + ['--dump-single-json', '--skip-download', '--no-progress', '--playlist-end', str(config.MAX_PLAYLIST)]
+        args += ['--flat-playlist', '--yes-playlist'] if playlist else ['--no-playlist']
+        # Temporary files prevent unbounded captured subprocess output in memory.
+        with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
+            process = subprocess.Popen(args + ['--', url], stdout=out, stderr=err, start_new_session=True)
+            started = time.monotonic()
+            while process.poll() is None:
+                if time.monotonic() - started > 75 or os.fstat(out.fileno()).st_size > 16 * 1024 * 1024:
+                    os.killpg(process.pid, signal.SIGKILL)
+                    process.wait()
+                    raise ValueError('The platform took too long to respond. Please try again.')
+                time.sleep(.15)
+            if process.returncode:
+                err.seek(0)
+                raise ValueError(friendly_error(err.read(65536).decode(errors='replace')))
+            out.seek(0)
+            try:
+                info = json.load(out)
+            except (ValueError, TypeError):
+                raise ValueError('The platform returned an unreadable response.') from None
+        source_cache.put((url, playlist), info, len(json.dumps(info).encode()))
     if info.get('is_live') or info.get('live_status') == 'is_live':
         raise ValueError('Live streams are not supported. Try again after the broadcast ends.')
     if info.get('_type') == 'playlist' or 'entries' in info:
@@ -110,14 +117,19 @@ def formats(info):
         if f.get('vcodec') == 'none':
             continue
         resolution = min(f['height'], f['width']) if f.get('height') and f.get('width') else (f.get('height') or 0)
-        key = (resolution, 'mp4' if f.get('ext') == 'mp4' and (f.get('acodec') != 'none' or not best_audio or best_audio.get('ext') == 'm4a') else 'mkv')
-        if key not in grouped or (f.get('tbr') or 0) > (grouped[key].get('tbr') or 0):
+        key = resolution
+        def rank(fmt):
+            return (str(fmt.get('vcodec', '')).startswith(('avc1', 'h264')), fmt.get('dynamic_range') in (None, 'SDR'), fmt.get('fps') or 0, fmt.get('tbr') or 0)
+        if key not in grouped or rank(f) > rank(grouped[key]):
             grouped[key] = f
     result = []
-    for (height, ext), f in sorted(grouped.items(), key=lambda p: (-p[0][0], p[0][1] != 'mp4')):
+    for height, f in sorted(grouped.items(), reverse=True):
+        ext = 'mp4' if f.get('ext') == 'mp4' and (f.get('acodec') not in ('none', None) or not best_audio or best_audio.get('ext') == 'm4a') else 'mkv'
+        codec = str(f.get('vcodec') or 'unknown')
+        conversion = not codec.startswith(('avc1', 'h264')) or f.get('dynamic_range') not in (None, 'SDR')
         size, estimated = size_of(f, duration)
         spec = f['format_id']
-        has_audio = f.get('acodec') != 'none' or best_audio is not None
+        has_audio = f.get('acodec') not in ('none', None) or best_audio is not None
         if f.get('acodec') == 'none' and best_audio:
             spec += '+' + best_audio['format_id']
             audio_size, audio_estimated = size_of(best_audio, duration)
@@ -125,8 +137,8 @@ def formats(info):
             estimated = estimated or audio_estimated
         if size and size > config.MAX_FILE:
             continue
-        result.append({'id': str(uuid.uuid4()), 'label': f'{int(height)}p' if height else 'Original', 'height': int(height), 'hasAudio': has_audio, 'ext': ext, 'kind': 'video', 'size': size, 'estimated': estimated, 'fps': f.get('fps'), 'spec': spec})
-    if best_audio or any(f.get('acodec') != 'none' for f in usable):
+        result.append({'id': str(uuid.uuid4()), 'label': f'{int(height)}p' if height else 'Original', 'height': int(height), 'hasAudio': has_audio, 'ext': 'mp4', 'sourceExt': ext, 'codec': codec, 'requiresConversion': conversion, 'kind': 'video', 'size': size, 'estimated': estimated, 'fps': f.get('fps'), 'spec': spec})
+    if best_audio or any(f.get('acodec') not in ('none', None) for f in usable):
         for ext, kbps in [('mp3', 192), ('m4a', 128)]:
             size = math.ceil(duration * kbps * 1000 / 8) if duration else None
             if size is None or size <= config.MAX_FILE:
@@ -149,23 +161,33 @@ def choose(info, preset):
         raise ValueError('The selected format is unavailable for this playlist item.')
     return choice
 
-def download(job, proxy, update, cancelled, process_callback):
+def download(job, proxy, update, cancelled, process_callback, _cached=True, _deadline=None):
+    deadline = _deadline or (time.monotonic() + config.TIMEOUT)
     folder = config.DOWNLOADS / job['id']
     folder.mkdir(exist_ok=True)
     option = job['option']
     args = command(proxy) + source_args(job['url']) + ['--no-playlist', '--no-simulate', '--newline', '--progress', '--progress-delta', '1',
         '--progress-template', 'download:VELORA:%(progress._percent_str)s', '--max-filesize', str(config.MAX_FILE),
         '--match-filters', f'!is_live & duration <=? {config.MAX_DURATION}', '--abort-on-unavailable-fragments', '--hls-prefer-native',
-        '--concurrent-fragments', '1', '--limit-rate', '8M', '-f', option['spec'], '-o', str(folder / 'media.%(ext)s'),
+        '--concurrent-fragments', '3', '--limit-rate', '8M', '-f', option['spec'], '-o', str(folder / 'media.%(ext)s'),
         '--print-to-file', 'after_move:filepath', str(folder / 'result.txt')]
     if option['kind'] == 'audio':
         args += ['-x', '--audio-format', option['ext'], '--audio-quality', str(option.get('bitrate', 192)) + 'K']
     else:
-        args += ['--merge-output-format', option['ext'], '--remux-video', option['ext']]
+        args += ['--merge-output-format', option.get('sourceExt', option['ext']), '--remux-video', option.get('sourceExt', option['ext'])]
+    cached = source_cache.get((validate_url(job['url']), False)) if _cached else None
+    if cached:
+        for key in ('requested_downloads', 'requested_formats'):
+            cached.pop(key, None)
+        source_file = folder / 'source.json'
+        source_file.write_text(json.dumps(cached))
+        source_file.chmod(0o600)
+        source_args_list = ['--load-info-json', str(source_file)]
+    else:
+        source_args_list = ['--', validate_url(job['url'])]
     with (folder / 'process.log').open('w+') as log:
-        process = subprocess.Popen(args + ['--', validate_url(job['url'])], stdout=log, stderr=log, start_new_session=True)
+        process = subprocess.Popen(args + source_args_list, stdout=log, stderr=log, start_new_session=True)
         process_callback(process)
-        start = time.monotonic()
         cursor = 0
         while process.poll() is None:
             if cancelled():
@@ -173,7 +195,7 @@ def download(job, proxy, update, cancelled, process_callback):
                 process.wait()
                 raise ValueError('Download cancelled.')
             files_size = sum(p.stat().st_size for p in folder.iterdir() if p.is_file())
-            if time.monotonic() - start > config.TIMEOUT or files_size > config.MAX_FILE * 3:
+            if time.monotonic() > deadline or files_size > config.MAX_FILE * 3:
                 os.killpg(process.pid, signal.SIGKILL)
                 process.wait()
                 raise ValueError('This download exceeded the beta processing limit. Try a smaller quality.')
@@ -184,9 +206,14 @@ def download(job, proxy, update, cancelled, process_callback):
             matches = re.findall(r'VELORA:\s*([\d.]+)%', lines)
             if matches:
                 update(min(95, float(matches[-1]) * .95))
-            time.sleep(.5)
+            time.sleep(.2)
         process_callback(None)
         if process.returncode:
+            if cached and not cancelled() and time.monotonic() < deadline:
+                source_cache.remove((validate_url(job['url']), False))
+                import shutil
+                shutil.rmtree(folder)
+                return download(job, proxy, update, cancelled, process_callback, _cached=False, _deadline=deadline)
             log.seek(0)
             raise ValueError(friendly_error(log.read(65536)))
     marker = folder / 'result.txt'
@@ -195,11 +222,8 @@ def download(job, proxy, update, cancelled, process_callback):
     path = Path(marker.read_text().strip().splitlines()[-1]).resolve()
     if path.parent != folder.resolve() or not path.is_file() or path.stat().st_size > config.MAX_FILE:
         raise ValueError('The output exceeded the download limit.')
-    probe = subprocess.run(['ffprobe', '-v', 'error', '-show_format', '-show_streams', '-of', 'json', str(path)], capture_output=True, text=True, timeout=20, check=True)
-    metadata = json.loads(probe.stdout)
-    if float(metadata.get('format', {}).get('duration', 0)) > config.MAX_DURATION:
-        raise ValueError('This video exceeds the beta duration limit.')
-    tracks = {track.get('codec_type') for track in metadata.get('streams', [])}
-    if option['kind'] == 'audio' and 'audio' not in tracks:
-        raise ValueError('This source does not contain an audio track.')
+    path = finalize(path, option, cancelled, process_callback, deadline, update)
+    if path.stat().st_size > config.MAX_FILE:
+        raise ValueError('The prepared file exceeded the beta size limit. Try a smaller quality.')
+    (folder / 'source.json').unlink(missing_ok=True)
     return path

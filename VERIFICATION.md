@@ -5,8 +5,8 @@ Verified on 26 September 2026 in the connected Ubuntu workspace.
 ## Automated
 
 - Production TypeScript/Vite build passed.
-- 28 backend checks passed: validation, blocked network destinations, signed tokens, job ownership, playlist selection/processing, rate limiting, real FFmpeg processing.
-- 8 browser checks passed across desktop (1440px) and mobile (390px): analysis, quality/audio choices, queue, theme, dialogs, installation guidance, platform errors, horizontal overflow, idle polling and foreground refresh.
+- 36 backend checks passed: validation, blocked network destinations, signed tokens, job ownership, playlist selection/processing, rate limiting, real FFmpeg processing.
+- 12 browser checks passed across desktop (1440px) and mobile (390px): analysis, quality/audio choices, queue, theme, dialogs, installation guidance, platform errors, horizontal overflow, idle polling and foreground refresh.
 - Production PWA test passed: manifest, PNG icons, share-target configuration and offline shell after a previous online visit. This is not a substitute for installation testing on a physical iPhone/Android phone.
 - Frontend dependency audit reported zero vulnerabilities when dependencies were installed.
 
@@ -34,3 +34,13 @@ Temporary live-test downloads were removed after verification. Automated tests u
 - No paid plan or resource was enabled.
 
 This is a deployed small beta, not a guarantee of unrestricted social-platform downloads or uninterrupted availability. Ubuntu must remain awake and online. See [DEPLOYMENT.md](DEPLOYMENT.md).
+
+## September 2026 refinement release
+
+- Updated interaction: a single quality-button click queues the job and automatically requests saving. Regression coverage verifies only one automatic save attempt, explicit Original mode, idle polling and recurring install guidance that stops after a recorded installation.
+- Generated 3840 × 2160 VP9/Opus media was converted to H.264/AAC MP4 with no downscaling. The entire saved fixture decoded successfully; MP4 metadata precedes media data for playback startup. Original mode preserved VP9/Opus. A separate 10-bit HDR fixture was converted to 8-bit SDR. Missing expected audio and unreadable media are rejected.
+- Short-lived metadata reuse, cache isolation/limits/expiry, actual cached-source downloading and fallback after an expired source URL were tested.
+- In isolated staging, the provided Facebook link took 9.927 seconds to inspect initially and 0.006 seconds on a cache hit. This is a local-worker observation, not a promise for every link or an internet latency measurement.
+- A real mobile browser lookup using the warm staging cache took 0.22 seconds. One tap on 720p produced an automatic download in 9.14 seconds with H.264/AAC tracks; full-file decoding passed. Real YouTube, TikTok, Facebook and silent Instagram samples also passed the updated staging pipeline.
+- A stale Neon connection was reproduced in the previous deployment. Pool checkout now checks connection health. An actual Neon test disconnected only its own client socket; the following read recovered in 1.87 seconds.
+- The original failing 4K URL/player was unavailable, so that specific historical incident could not be reproduced. The 4K regression uses generated media; mobile/desktop playback also depends on device decoding capability.

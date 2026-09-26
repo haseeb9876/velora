@@ -51,7 +51,7 @@ The current beta processes one job at a time, accepts up to ten playlist items, 
 
 ## Using the app
 
-Open the public PWA, paste a permitted public video link, select an available quality or audio format, prepare the download, then select **Save file**. The original source determines available resolution and whether audio exists.
+Open the public PWA, paste a permitted public video link, tap an available quality or audio format. The job starts immediately and the app automatically requests saving when it is ready. Use **Save file / Save again** if your browser blocks that request. Compatible MP4 favors playback compatibility; Original skips compatibility conversion. The original source determines available resolution and whether audio exists.
 
 On supported Android/desktop browsers, use **Install Velora** or the browser's install option. On iPhone/iPad, open in Safari and use **Share → Add to Home Screen**. Installation prompts depend on the browser. Physical-device installation remains a user acceptance check; browser emulation does not prove every device's behavior.
 

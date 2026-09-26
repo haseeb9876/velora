@@ -13,7 +13,7 @@ class Store:
         self.pool = None
         if os.getenv('DATABASE_URL'):
             from psycopg_pool import ConnectionPool
-            self.pool = ConnectionPool(os.environ['DATABASE_URL'], min_size=0, max_size=4)
+            self.pool = ConnectionPool(os.environ['DATABASE_URL'], min_size=0, max_size=4, max_idle=60, timeout=15, check=ConnectionPool.check_connection, kwargs={'connect_timeout': 10})
         else:
             self.db = sqlite3.connect(DATA / 'velora.sqlite3', check_same_thread=False)
             self.db.execute('PRAGMA journal_mode=WAL')

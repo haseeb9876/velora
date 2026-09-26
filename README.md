@@ -34,11 +34,13 @@ Open http://127.0.0.1:5173. Vite proxies `/api` and `/files` to the worker on po
 
 ## Features
 
-- Single-video inspection with actual available qualities, container type, frame rate, and exact or estimated file size.
-- Video with audio, MP3 extraction and M4A extraction. Video and audio streams are merged without video upscaling.
+- Single-video inspection with actual available qualities, codec details, frame rate, and exact or estimated source size. A bounded five-minute extraction cache accelerates repeated links and avoids repeating extraction before download.
+- One-click quality buttons start processing and automatically request browser saving when ready. Save again remains available if the browser blocks automatic saving.
+- Compatible MP4 output prefers H.264 sources, converts other video codecs to H.264/AAC as needed, tone maps HDR to SDR, and preserves resolution without upscaling. Original mode keeps source codecs for faster preparation. MP3 and M4A audio extraction remain available.
+- Prepared media is probed for missing tracks and invalid duration; beginning/middle/end decode checks reject detectable broken output. Transcoded output is checked for retained resolution and complete duration.
 - Playlist selection and per-item preparation; default maximum 10 items. Source-platform playlist support varies.
 - Anonymous browser sessions, job ownership checks, queued processing, cancellation, file removal and signed download links.
-- Responsive light/dark UI, local fonts, PWA icons, offline app shell, installation guidance and Web Share Target where supported.
+- Responsive light/dark UI, original geometric V logo, local fonts, matching PWA icons, offline app shell, persistent installation invitation and Web Share Target where supported.
 - Primary source adapters: YouTube, Facebook, TikTok and Instagram. Extended adapters: Vimeo, Reddit, X and Pinterest. An adapter is not a promise that every URL or source server will permit downloading.
 - Optional Neon storage using the same document schema as SQLite. Media files always live on the Ubuntu worker.
 
@@ -142,7 +144,13 @@ Backend tests cover URL/network validation, signatures, ownership, queue lifecyc
 
 Social websites change frequently. Update yt-dlp in the virtual environment with `.venv/bin/pip install -U 'yt-dlp[default,curl-cffi]'`, run the tests, then record updated versions using `.venv/bin/pip freeze > worker/requirements.lock`. Authentication requirements, geographic restrictions and anti-bot blocks are surfaced as errors; no success is fabricated.
 
-Background processing continues on Ubuntu, but the browser cannot guarantee automatic saving of multiple files or downloading while a phone sleeps. Save playlist files individually from My downloads. MP4 is generally the convenient choice; MKV may require another media player. Source codec compatibility also varies by device.
+Background processing continues on Ubuntu. Saving is automatically requested for jobs started in the current tab when that tab is visible. Pending requests survive a reload in that tab. Browsers may restrict automatic/multiple file saving or suspend a phone in the background; use Save file / Save again if needed. The app does not claim that the browser saved a file merely because a download was requested.
+
+Compatible MP4 may take longer, particularly for 4K. Conversion can change file size and recompress video; the UI labels source sizes separately when output size is unknown. Original mode keeps source codecs and may need a player that supports VP9/AV1/HEVC. The free Ubuntu worker cannot promise instant source lookups or real-time 4K conversion.
+
+The install invitation remains visible until the app detects standalone mode or receives an installation event and remembers that state locally. Native installation requires a user gesture and browser support; iOS has manual instructions. Browsers do not universally report whether a PWA has been uninstalled.
+
+Neon connections are checked when borrowed from the pool, and unused connections are released after 60 seconds. This avoids reusing an idle connection that the database has closed; it does not keep Neon awake with background health queries.
 
 The PWA shell can open offline after an online visit. Media analysis and downloads require connectivity. Installation prompts and receiving shared links vary by browser, especially on iOS.
 

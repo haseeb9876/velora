@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import {
-  ArrowDown,
   ArrowDownToLine,
   ArrowRight,
   ArrowUpRight,
@@ -51,9 +50,32 @@ const platformNames = [
 const icons = ["▶", "◎", "♪", "f", "𝕏", "v", "●", "p"];
 function Logo() {
   return (
-    <span className="brand-mark">
-      <ArrowDown strokeWidth={3} size={23} />
-    </span>
+    <img
+      className="brand-mark"
+      src="/brand-mark.svg"
+      alt=""
+      width="42"
+      height="42"
+    />
+  );
+}
+function rememberedDownloads(): string[] {
+  try {
+    const value = JSON.parse(
+      sessionStorage.getItem("velora-auto-downloads") || "[]",
+    );
+    return Array.isArray(value)
+      ? value.filter((id): id is string => typeof id === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+function isInstalled() {
+  return (
+    matchMedia("(display-mode: standalone)").matches ||
+    (navigator as Navigator & { standalone?: boolean }).standalone === true ||
+    localStorage.getItem("velora-installed") === "true"
   );
 }
 function getSharedUrl() {
@@ -71,7 +93,12 @@ export default function App() {
   const [mode, setMode] = useState<"video" | "playlist">("video");
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [mediaType, setMediaType] = useState<"video" | "audio">("video");
-  const [choice, setChoice] = useState("");
+  const [profile, setProfile] = useState<"compatible" | "original">(
+    "compatible",
+  );
+  const autoDownloads = useRef(new Set(rememberedDownloads()));
+  const [sentDownloads, setSentDownloads] = useState<Set<string>>(new Set());
+  const [analysisSeconds, setAnalysisSeconds] = useState(0);
   const [entries, setEntries] = useState<string[]>([]);
   const [preset, setPreset] = useState("best");
   const [busy, setBusy] = useState(false);
@@ -84,9 +111,7 @@ export default function App() {
     "checking" | "online" | "offline"
   >("checking");
   const [installPrompt, setInstallPrompt] = useState<InstallEvent | null>(null);
-  const [installed, setInstalled] = useState(
-    () => matchMedia("(display-mode: standalone)").matches,
-  );
+  const [installed, setInstalled] = useState(isInstalled);
   const [modal, setModal] = useState<
     "install" | "privacy" | "terms" | "help" | null
   >(null);
@@ -118,13 +143,25 @@ export default function App() {
       setInstallPrompt(event as InstallEvent);
     };
     const complete = () => {
+      localStorage.setItem("velora-installed", "true");
       setInstalled(true);
       setInstallPrompt(null);
       setModal(null);
     };
+    const displayMode = matchMedia("(display-mode: standalone)");
+    const checkDisplay = () => {
+      if (
+        displayMode.matches ||
+        (navigator as Navigator & { standalone?: boolean }).standalone
+      )
+        complete();
+    };
+    checkDisplay();
+    displayMode.addEventListener("change", checkDisplay);
     window.addEventListener("beforeinstallprompt", capture);
     window.addEventListener("appinstalled", complete);
     return () => {
+      displayMode.removeEventListener("change", checkDisplay);
       window.removeEventListener("beforeinstallprompt", capture);
       window.removeEventListener("appinstalled", complete);
       requestRef.current?.abort();
@@ -133,12 +170,20 @@ export default function App() {
   useEffect(() => {
     let alive = true;
     let refreshHistory = true;
+    let polling = false;
     const onVisible = () => {
-      if (!document.hidden) refreshHistory = true;
+      if (!document.hidden) {
+        refreshHistory = true;
+        clearTimeout(timer);
+        void poll();
+      }
     };
     document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("velora-jobs-changed", onVisible);
     let timer: ReturnType<typeof setTimeout>;
     async function poll() {
+      if (polling || !alive) return;
+      polling = true;
       try {
         const info = await api<Health>("/api/health");
         if (!alive) return;
@@ -169,12 +214,18 @@ export default function App() {
       } catch {
         if (alive) setConnection("offline");
       }
-      if (alive) timer = setTimeout(poll, document.hidden ? 30000 : 5000);
+      polling = false;
+      if (alive)
+        timer = setTimeout(
+          poll,
+          document.hidden ? 30000 : pendingJobs.current ? 1200 : 15000,
+        );
     }
     void poll();
     return () => {
       alive = false;
       document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("velora-jobs-changed", onVisible);
       clearTimeout(timer);
     };
   }, []);
@@ -183,6 +234,31 @@ export default function App() {
     const t = setTimeout(() => setToast(""), 4500);
     return () => clearTimeout(t);
   }, [toast]);
+
+  useEffect(() => {
+    if (!busy) return;
+    const timer = setInterval(
+      () => setAnalysisSeconds((value) => value + 1),
+      1000,
+    );
+    return () => clearInterval(timer);
+  }, [busy]);
+  useEffect(() => {
+    if (document.hidden) return;
+    for (const job of jobs) {
+      if (!autoDownloads.current.has(job.id)) continue;
+      if (["failed", "cancelled", "expired"].includes(job.status))
+        autoDownloads.current.delete(job.id);
+      if (job.status === "ready") {
+        autoDownloads.current.delete(job.id);
+        void saveFile(job, true);
+      }
+    }
+    sessionStorage.setItem(
+      "velora-auto-downloads",
+      JSON.stringify([...autoDownloads.current]),
+    );
+  }, [jobs]);
 
   async function analyze(event: FormEvent) {
     event.preventDefault();
@@ -197,6 +273,7 @@ export default function App() {
     requestRef.current?.abort();
     const controller = new AbortController();
     requestRef.current = controller;
+    setAnalysisSeconds(0);
     setBusy(true);
     setAnalysis(null);
     try {
@@ -210,11 +287,6 @@ export default function App() {
       });
       setAnalysis(data);
       setMediaType("video");
-      setChoice(
-        data.options?.find((f) => f.kind === "video")?.id ||
-          data.options?.[0]?.id ||
-          "",
-      );
       if (!data.options?.some((f) => f.kind === "video")) setMediaType("audio");
       setEntries(data.entries?.map((e) => e.id) || []);
       setTimeout(
@@ -229,10 +301,10 @@ export default function App() {
       if (!(e instanceof DOMException && e.name === "AbortError"))
         setError((e as Error).message);
     } finally {
-      setBusy(false);
+      if (requestRef.current === controller) setBusy(false);
     }
   }
-  async function queueDownload() {
+  async function queueDownload(optionId?: string) {
     if (!analysis) return;
     setQueuing(true);
     setError("");
@@ -241,14 +313,22 @@ export default function App() {
         method: "POST",
         body: JSON.stringify({
           analysis_id: analysis.id,
-          option_id: choice || null,
+          option_id: optionId || null,
+          profile,
           entry_ids: entries,
           preset,
         }),
       });
+      data.jobs.forEach((job) => autoDownloads.current.add(job.id));
+      sessionStorage.setItem(
+        "velora-auto-downloads",
+        JSON.stringify([...autoDownloads.current]),
+      );
+      pendingJobs.current = true;
       setJobs((previous) => [...data.jobs, ...previous]);
+      window.dispatchEvent(new Event("velora-jobs-changed"));
       setToast(
-        `${data.jobs.length === 1 ? "Your download is" : `${data.jobs.length} downloads are`} in the queue.`,
+        `${data.jobs.length === 1 ? "Your download is" : `${data.jobs.length} downloads are`} on the way. Saving starts automatically when ready.`,
       );
       setTab("library");
     } catch (e) {
@@ -257,7 +337,7 @@ export default function App() {
       setQueuing(false);
     }
   }
-  async function saveFile(job: Job) {
+  async function saveFile(job: Job, automatic = false) {
     try {
       const data = await api<{ url: string }>(`/api/jobs/${job.id}/ticket`, {
         method: "POST",
@@ -269,8 +349,11 @@ export default function App() {
       document.body.appendChild(a);
       a.click();
       a.remove();
+      setSentDownloads((previous) => new Set([...previous, job.id]));
       setToast(
-        "Your browser will save the file. On iPhone, check Files → Downloads.",
+        automatic
+          ? "Download sent to your browser. If it does not start, tap Save again."
+          : "Download sent to your browser. Check your Downloads folder.",
       );
     } catch (e) {
       setToast((e as Error).message);
@@ -279,6 +362,11 @@ export default function App() {
   async function removeJob(job: Job) {
     try {
       await api(`/api/jobs/${job.id}`, { method: "DELETE" });
+      autoDownloads.current.delete(job.id);
+      sessionStorage.setItem(
+        "velora-auto-downloads",
+        JSON.stringify([...autoDownloads.current]),
+      );
       setJobs((previous) =>
         previous.map((j) =>
           j.id === job.id ? { ...j, status: "cancelled" } : j,
@@ -300,6 +388,7 @@ export default function App() {
   async function paste() {
     try {
       setUrl(await navigator.clipboard.readText());
+      setAnalysis(null);
       setError("");
     } catch {
       setToast(
@@ -309,7 +398,6 @@ export default function App() {
   }
   function changeType(type: "video" | "audio") {
     setMediaType(type);
-    setChoice(analysis?.options?.find((f) => f.kind === type)?.id || "");
   }
   const displayedFormats =
     analysis?.options?.filter((f) => f.kind === mediaType) || [];
@@ -447,6 +535,21 @@ export default function App() {
           </div>
         </header>
         <main>
+          {!installed && (
+            <aside className="install-banner" aria-label="Install Velora app">
+              <Logo />
+              <div>
+                <strong>A little closer to your next download.</strong>
+                <p>
+                  Keep Velora on your home screen. Free, with no app store
+                  needed.
+                </p>
+              </div>
+              <button className="install-banner-button" onClick={install}>
+                Install app <ArrowUpRight size={16} />
+              </button>
+            </aside>
+          )}
           {tab === "download" ? (
             <>
               <section className="hero">
@@ -454,17 +557,17 @@ export default function App() {
                   <span className="eyebrow-spark">
                     <Sparkles size={13} />
                   </span>{" "}
-                  LESS SCROLLING. MORE KEEPING.
+                  YOUR LINKS. YOUR LIBRARY.
                 </div>
                 <h1>
-                  Good moments. <br />
-                  <span>Yours to keep.</span>
-                  <span className="hero-spark">✧</span>
+                  Keep what
+                  <br />
+                  <span>moves you.</span>
                 </h1>
                 <p>
-                  Save the videos you love, in the quality they deserve.
-                  <br className="desktop-break" /> One link. Your format. Right
-                  on your device.
+                  Beautiful videos deserve a place beyond your feed.
+                  <br className="desktop-break" /> Paste a link. Tap a quality.
+                  We’ll handle the rest.
                 </p>
               </section>
               <section className="download-card" aria-label="Video downloader">
@@ -590,9 +693,21 @@ export default function App() {
                   <div className="analysis-loading" aria-live="polite">
                     <span className="loading-line" />
                     <p>
-                      Checking the source and finding available qualities. This
-                      can take a moment.
+                      {analysisSeconds < 5
+                        ? "Finding your video and its available qualities…"
+                        : analysisSeconds < 15
+                          ? "Reading formats from the source. Some platforms take a little longer…"
+                          : "The source is taking longer to respond. You can cancel and try another link."}
                     </p>
+                    <button
+                      className="text-button"
+                      onClick={() => {
+                        requestRef.current?.abort();
+                        setBusy(false);
+                      }}
+                    >
+                      Cancel lookup
+                    </button>
                   </div>
                 )}
               </section>
@@ -662,51 +777,95 @@ export default function App() {
                           <Headphones size={15} /> Audio only
                         </button>
                       </div>
+                      {mediaType === "video" && (
+                        <div className="playback-preference">
+                          <span>Playback</span>
+                          <div role="group" aria-label="Playback format">
+                            <button
+                              aria-pressed={profile === "compatible"}
+                              onClick={() => setProfile("compatible")}
+                            >
+                              Compatible MP4
+                            </button>
+                            <button
+                              aria-pressed={profile === "original"}
+                              onClick={() => setProfile("original")}
+                            >
+                              Original · faster
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      <div className="quality-heading">
+                        <span>CHOOSE QUALITY</span>
+                        <span>ONE TAP TO DOWNLOAD</span>
+                      </div>
                       <div
                         className="format-list"
-                        role="radiogroup"
                         aria-label="Download quality"
                       >
-                        {displayedFormats.map((format, i) => (
-                          <label
-                            key={format.id}
-                            className={`format-option ${choice === format.id ? "chosen" : ""}`}
-                          >
-                            <input
-                              type="radio"
-                              name="quality"
-                              checked={choice === format.id}
-                              onChange={() => setChoice(format.id)}
-                            />
-                            <span className="custom-radio">
-                              {choice === format.id && <span />}
-                            </span>
-                            <span className="format-quality">
-                              {format.label}
-                              {i === 0 && mediaType === "video" && (
-                                <span className="recommended">
-                                  BEST AVAILABLE
-                                </span>
-                              )}
-                              <small>
-                                {format.ext.toUpperCase()}
-                                {format.hasAudio === false
-                                  ? " · Source has no audio"
-                                  : ""}
-                                {format.fps
-                                  ? ` · ${Math.round(format.fps)} fps`
-                                  : ""}
-                                {format.ext === "mkv"
-                                  ? " · May need a compatible player"
-                                  : ""}
-                              </small>
-                            </span>
-                            <span className="format-size">
-                              {format.estimated && format.size ? "≈ " : ""}
-                              {sizeLabel(format.size)}
-                            </span>
-                          </label>
-                        ))}
+                        {displayedFormats.map((format, i) => {
+                          const converting =
+                            mediaType === "video" &&
+                            profile === "compatible" &&
+                            format.requiresConversion;
+                          const ext =
+                            profile === "original"
+                              ? format.sourceExt || format.ext
+                              : format.ext;
+                          return (
+                            <button
+                              key={format.id}
+                              className="format-option download-quality"
+                              disabled={queuing}
+                              aria-label={`Download ${format.label} ${ext.toUpperCase()}`}
+                              onClick={() => void queueDownload(format.id)}
+                            >
+                              <span className="quality-symbol">
+                                {mediaType === "audio" ? (
+                                  <Headphones size={20} />
+                                ) : (
+                                  <Film size={20} />
+                                )}
+                              </span>
+                              <span className="format-quality">
+                                {format.label}
+                                {i === 0 && mediaType === "video" && (
+                                  <span className="recommended">BEST</span>
+                                )}
+                                <small>
+                                  {ext.toUpperCase()}
+                                  {format.fps
+                                    ? ` · ${Math.round(format.fps)} fps`
+                                    : ""}
+                                  {format.hasAudio === false
+                                    ? " · Silent source"
+                                    : ""}
+                                  {converting
+                                    ? " · Optimized for playback"
+                                    : profile === "original" && format.codec
+                                      ? ` · ${format.codec.split(".")[0].toUpperCase()}`
+                                      : ""}
+                                </small>
+                              </span>
+                              <span className="format-size">
+                                {converting
+                                  ? "Output size varies"
+                                  : `${format.estimated && format.size ? "≈ " : ""}${sizeLabel(format.size)}`}
+                                {converting && format.size ? (
+                                  <small>{sizeLabel(format.size)} source</small>
+                                ) : null}
+                              </span>
+                              <span className="quality-download">
+                                {queuing ? (
+                                  <LoaderCircle className="spin" size={18} />
+                                ) : (
+                                  <ArrowDownToLine size={18} />
+                                )}
+                              </span>
+                            </button>
+                          );
+                        })}
                       </div>
                       {displayedFormats.length === 0 && (
                         <p className="muted">
@@ -714,8 +873,10 @@ export default function App() {
                         </p>
                       )}
                       <p className="size-note">
-                        Estimated sizes may change after processing. Quality is
-                        limited by the original upload.
+                        Tap a quality to start. Your file saves automatically
+                        when ready. Compatible MP4 may take longer for 4K;
+                        Original keeps the source codec and may need a
+                        compatible player.
                       </p>
                     </>
                   ) : (
@@ -781,23 +942,20 @@ export default function App() {
                       </p>
                     </>
                   )}
-                  <button
-                    className="primary-button result-download"
-                    disabled={
-                      queuing ||
-                      (analysis.kind === "video" ? !choice : !entries.length)
-                    }
-                    onClick={queueDownload}
-                  >
-                    {queuing ? (
-                      <LoaderCircle size={17} className="spin" />
-                    ) : (
-                      <ArrowDownToLine size={17} />
-                    )}{" "}
-                    {analysis.kind === "playlist"
-                      ? `Prepare ${entries.length} videos`
-                      : "Prepare download"}
-                  </button>
+                  {analysis.kind === "playlist" && (
+                    <button
+                      className="primary-button result-download"
+                      disabled={queuing || !entries.length}
+                      onClick={() => void queueDownload()}
+                    >
+                      {queuing ? (
+                        <LoaderCircle size={17} className="spin" />
+                      ) : (
+                        <ArrowDownToLine size={17} />
+                      )}{" "}
+                      Download {entries.length} videos
+                    </button>
+                  )}
                 </section>
               )}
               <section className="platforms-section" id="platforms">
@@ -879,7 +1037,7 @@ export default function App() {
                   <br />
                   <span>almost home.</span>
                 </h1>
-                <p>Prepare your files here, then save them to your device.</p>
+                <p>Your downloads start saving automatically when ready.</p>
                 <button
                   className="secondary-button"
                   onClick={() => setTab("download")}
@@ -940,20 +1098,27 @@ export default function App() {
                             {job.status === "processing" ? (
                               <>
                                 <LoaderCircle className="spin" size={12} />
-                                {job.progress >= 95
-                                  ? "Finishing your file…"
-                                  : `Preparing · ${Math.round(job.progress)}%`}
+                                {job.progress >= 98
+                                  ? "Checking video and audio…"
+                                  : job.progress >= 96
+                                    ? "Optimizing playback…"
+                                    : job.progress >= 95
+                                      ? "Finishing your file…"
+                                      : `Preparing · ${Math.round(job.progress)}%`}
                               </>
                             ) : job.status === "ready" ? (
                               <>
-                                <Check size={13} /> Ready to save
+                                <Check size={13} />{" "}
+                                {sentDownloads.has(job.id)
+                                  ? "Sent to browser"
+                                  : "Ready to save"}
                               </>
                             ) : job.status === "queued" ? (
                               <>
                                 <Clock3 size={12} /> Waiting in queue
                               </>
                             ) : job.status === "expired" ? (
-                              "File expired · Prepare it again to download"
+                              "File expired · Download it again"
                             ) : (
                               job.error || "Download failed"
                             )}
@@ -982,7 +1147,11 @@ export default function App() {
                               onClick={() => saveFile(job)}
                             >
                               <ArrowDownToLine size={16} />
-                              <span>Save file</span>
+                              <span>
+                                {sentDownloads.has(job.id)
+                                  ? "Save again"
+                                  : "Save file"}
+                              </span>
                             </button>
                           )}
                           {(job.status === "failed" ||
@@ -1212,7 +1381,8 @@ export default function App() {
                 <div>
                   <h3>Save it for later.</h3>
                   <p>
-                    Prepare your download, then select Save file in My
+                    Tap your preferred quality. Saving starts automatically when
+                    ready. If your browser blocks it, use Save file in My
                     downloads. Your browser handles saving to the device. On
                     iPhone, look in the Files app.
                   </p>

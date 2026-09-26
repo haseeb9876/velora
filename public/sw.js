@@ -1,4 +1,4 @@
-const CACHE = "velora-shell-v1";
+const CACHE = "velora-shell-v2";
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches
@@ -8,6 +8,7 @@ self.addEventListener("install", (event) => {
           "/",
           "/manifest.webmanifest",
           "/favicon.svg",
+          "/brand-mark.svg",
           "/icons/icon-192.png",
           "/icons/icon-512.png",
         ]),
@@ -51,6 +52,7 @@ self.addEventListener("fetch", (event) => {
         .catch(() => caches.match("/")),
     );
   } else if (
+    url.pathname === "/brand-mark.svg" ||
     url.pathname.startsWith("/assets/") ||
     url.pathname.startsWith("/icons/")
   ) {

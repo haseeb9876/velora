@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 test.beforeEach(async ({ page }) => {
+  let created = false;
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     let body: unknown = {};
@@ -52,26 +53,31 @@ test.beforeEach(async ({ page }) => {
           },
         ],
       };
-    else if (path.endsWith("/jobs"))
+    else if (path.endsWith("/ticket"))
+      body = { url: "data:video/mp4;base64,b3duZWQtdGVzdC1maXh0dXJl" };
+    else if (path.endsWith("/jobs")) {
+      const posting = route.request().method() === "POST";
+      if (posting) created = true;
       body = {
-        jobs:
-          route.request().method() === "POST"
-            ? [
-                {
-                  id: "j1",
-                  title: "A moment in the mountains",
-                  label: "1080p · MP4",
-                  status: "queued",
-                  progress: 0,
-                  created: Date.now() / 1000,
-                },
-              ]
-            : [],
+        jobs: created
+          ? [
+              {
+                id: "j1",
+                title: "A moment in the mountains",
+                label: "1080p · MP4",
+                status: posting ? "queued" : "ready",
+                progress: posting ? 0 : 100,
+                created: Date.now() / 1000,
+                expires: Date.now() / 1000 + 7200,
+              },
+            ]
+          : [],
       };
+    }
     await route.fulfill({ json: body });
   });
 });
-test("analyzes link, changes format, and queues a download", async ({
+test("one quality click queues and automatically saves exactly once", async ({
   page,
 }) => {
   await page.goto("/");
@@ -85,23 +91,39 @@ test("analyzes link, changes format, and queues a download", async ({
   await expect(page.getByText("≈ 22.9 MB")).toBeVisible();
   await page.getByRole("button", { name: "Audio only", exact: true }).click();
   await expect(
-    page.getByRole("radio", { name: /MP3 · 192 kbps/ }),
+    page.getByRole("button", { name: /Download MP3/ }),
   ).toBeVisible();
   await page
     .getByRole("button", { name: "Video + audio", exact: true })
     .click();
-  await page.getByRole("button", { name: "Prepare download" }).click();
+  let downloads = 0;
+  page.on("download", () => downloads++);
+  const posting = page.waitForRequest(
+    (r) => new URL(r.url()).pathname === "/api/jobs" && r.method() === "POST",
+  );
+  const saving = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download 720p MP4" }).click();
+  expect((await posting).postDataJSON()).toMatchObject({
+    option_id: "720",
+    profile: "compatible",
+  });
+  const download = await saving;
+  expect(await download.failure()).toBeNull();
+  expect(download.suggestedFilename()).toMatch(/\.mp4$/);
+  await expect(page.getByRole("button", { name: "Save again" })).toBeVisible();
+  await page.evaluate(() =>
+    document.dispatchEvent(new Event("visibilitychange")),
+  );
   await expect(
-    page.getByText("Waiting in queue", { exact: true }),
+    page.getByText("Sent to browser", { exact: true }),
   ).toBeVisible();
+  expect(downloads).toBe(1);
 });
 test("layout, theme, privacy dialog, and install help", async ({
   page,
 }, testInfo) => {
   await page.goto("/");
-  await expect(
-    page.getByRole("heading", { name: /Good moments/ }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Keep what/ })).toBeVisible();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
@@ -132,14 +154,15 @@ test("source failures do not invent downloads", async ({ page }) => {
   await page.getByLabel("Drop a link.").fill("https://instagram.com/reel/test");
   await page.getByRole("button", { name: "Find my video" }).click();
   await expect(page.getByRole("alert")).toContainText("requires sign-in");
-  await expect(
-    page.getByRole("button", { name: "Prepare download" }),
-  ).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Download \d+p/ })).toHaveCount(
+    0,
+  );
 });
 
 test("idle library stops polling and refreshes when the app returns", async ({
   page,
 }) => {
+  await page.clock.install();
   let historyReads = 0;
   let healthReads = 0;
   page.on("response", (response) => {
@@ -150,19 +173,53 @@ test("idle library stops polling and refreshes when the app returns", async ({
   });
   await page.goto("/");
   await expect.poll(() => historyReads).toBeGreaterThan(0);
-  await expect
-    .poll(() => healthReads, { timeout: 15000 })
-    .toBeGreaterThanOrEqual(3);
   const initialReads = historyReads;
   const initialHealth = healthReads;
-  await expect
-    .poll(() => healthReads, { timeout: 10000 })
-    .toBeGreaterThan(initialHealth);
+  await page.clock.runFor(16000);
+  await expect.poll(() => healthReads).toBeGreaterThan(initialHealth);
   expect(historyReads).toBe(initialReads);
   await page.evaluate(() =>
     document.dispatchEvent(new Event("visibilitychange")),
   );
-  await expect
-    .poll(() => historyReads, { timeout: 10000 })
-    .toBeGreaterThan(initialReads);
+  await expect.poll(() => historyReads).toBeGreaterThan(initialReads);
+});
+
+test("install invitation repeats until installation and stays hidden afterwards", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(
+    page.getByRole("complementary", { name: "Install Velora app" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Install app", exact: true }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.reload();
+  await expect(
+    page.getByRole("complementary", { name: "Install Velora app" }),
+  ).toBeVisible();
+  await page.evaluate(() => window.dispatchEvent(new Event("appinstalled")));
+  await expect(
+    page.getByRole("complementary", { name: "Install Velora app" }),
+  ).toHaveCount(0);
+  await page.reload();
+  await expect(
+    page.getByRole("complementary", { name: "Install Velora app" }),
+  ).toHaveCount(0);
+});
+
+test("original format can be requested without compatibility conversion", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByLabel("Drop a link.")
+    .fill("https://youtube.com/watch?v=test");
+  await page.getByRole("button", { name: "Find my video" }).click();
+  await page.getByRole("button", { name: "Original · faster" }).click();
+  const posting = page.waitForRequest(
+    (r) => new URL(r.url()).pathname === "/api/jobs" && r.method() === "POST",
+  );
+  await page.getByRole("button", { name: "Download 1080p MP4" }).click();
+  expect((await posting).postDataJSON().profile).toBe("original");
 });
