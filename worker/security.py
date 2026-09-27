@@ -7,14 +7,10 @@ import socket
 import time
 from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 from config import SECRET
+from pathlib import Path
 
-PLATFORMS = {
-    'youtube.com': 'YouTube', 'youtu.be': 'YouTube',
-    'facebook.com': 'Facebook', 'fb.watch': 'Facebook',
-    'instagram.com': 'Instagram', 'tiktok.com': 'TikTok',
-    'vimeo.com': 'Vimeo', 'reddit.com': 'Reddit', 'redd.it': 'Reddit',
-    'twitter.com': 'X', 'x.com': 'X', 'pinterest.com': 'Pinterest', 'pin.it': 'Pinterest',
-}
+CATALOG = json.loads((Path(__file__).resolve().parents[1] / 'shared' / 'platforms.json').read_text())
+PLATFORMS = {host: item['name'] for item in CATALOG for host in item['hosts']}
 
 def platform(host):
     return next((v for k, v in PLATFORMS.items() if host == k or host.endswith('.' + k)), None)

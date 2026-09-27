@@ -856,3 +856,307 @@ footer button,
     max-width: none;
   }
 }
+
+/* Installation, updates and the personal download library. */
+.update-banner {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  margin-top: 22px;
+  padding: 16px 18px;
+  border: 1px solid var(--purple);
+  border-radius: 15px;
+  background: var(--purple-soft);
+  color: var(--purple);
+}
+.update-banner > div {
+  flex: 1;
+  min-width: 0;
+}
+.update-banner strong {
+  font-size: 13px;
+  line-height: 1.5;
+}
+.update-banner p {
+  font-size: 11px;
+  line-height: 1.6;
+  margin-top: 3px;
+  color: var(--muted);
+}
+.update-banner button {
+  padding: 11px 13px;
+  border-radius: 9px;
+  background: var(--surface);
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+  min-height: 42px;
+}
+.install-benefits {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 20px 0 24px;
+}
+.install-benefits > span {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px 6px;
+  font-size: 11px;
+  color: var(--purple);
+  background: var(--input);
+}
+.install-later {
+  display: block;
+  width: 100%;
+  text-align: center;
+  color: var(--muted);
+  padding: 13px;
+  margin-top: 17px;
+  border-radius: 9px;
+  font-size: 12px;
+  min-height: 44px;
+}
+.install-later:hover {
+  background: var(--input);
+  color: var(--text);
+}
+.modal-install .modal-illustration {
+  margin-top: 22px;
+  background:
+    radial-gradient(
+      ellipse at 50% 10%,
+      color-mix(in srgb, var(--purple) 14%, transparent),
+      transparent 65%
+    ),
+    var(--purple-soft);
+  height: 126px;
+  border: 1px solid var(--line);
+}
+.modal-install .modal-illustration .brand-mark {
+  width: 69px;
+  height: 69px;
+  box-shadow: 0 14px 24px #123d281a;
+  transform: rotate(-7deg);
+}
+.modal-install .primary-button {
+  width: 100%;
+  margin: 15px 0;
+}
+.modal-install .instruction-block strong {
+  font-size: 13px;
+}
+.modal-install .instruction-block p {
+  font-size: 12px;
+  line-height: 1.8;
+}
+.modal-install .muted {
+  font-size: 11px;
+}
+.library-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 25px 0;
+}
+.library-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  min-height: 48px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: 12px;
+  color: var(--muted);
+}
+.library-search:focus-within {
+  border-color: var(--purple);
+  box-shadow: 0 0 0 3px var(--purple-soft);
+}
+.library-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  outline: none;
+  padding: 13px 0;
+  font-size: 13px;
+}
+.library-search input::placeholder {
+  color: var(--muted);
+}
+.library-filters {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+.library-filters button {
+  border: 1px solid var(--line);
+  border-radius: 30px;
+  padding: 9px 14px;
+  min-height: 38px;
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--surface);
+}
+.library-filters button[aria-pressed="true"] {
+  color: var(--purple);
+  background: var(--purple-soft);
+  border-color: var(--purple);
+}
+.no-matches {
+  text-align: center;
+  padding: 38px 16px;
+  border: 1px dashed var(--line);
+  border-radius: 17px;
+  color: var(--muted);
+}
+.no-matches > svg {
+  margin-bottom: 15px;
+}
+.no-matches h2 {
+  font-size: 16px;
+  color: var(--text);
+}
+.no-matches p {
+  font-size: 12px;
+  margin: 9px 0 15px;
+}
+.no-matches button {
+  font-size: 12px;
+  color: var(--purple);
+  padding: 10px;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.section-heading > button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--purple);
+  padding: 8px 0 8px 8px;
+  min-height: 36px;
+}
+.platform-directory {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin-top: 18px;
+}
+.platform-directory article {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--input);
+}
+.platform-directory article > span {
+  width: 37px;
+  height: 37px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  background: var(--surface);
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--purple);
+}
+.platform-directory h3 {
+  font-size: 13px;
+}
+.platform-directory article p {
+  font-size: 11px;
+  margin: 4px 0 0;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.modal-platforms .library-search {
+  margin-top: 18px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.job-actions .secondary-button {
+  font-size: 11px;
+  min-height: 42px;
+  border-radius: 9px;
+}
+@media (max-width: 680px) {
+  .update-banner {
+    gap: 10px;
+    padding: 13px 12px;
+    flex-wrap: wrap;
+  }
+  .update-banner > svg {
+    width: 17px;
+  }
+  .update-banner strong {
+    font-size: 12px;
+  }
+  .update-banner p {
+    font-size: 10px;
+  }
+  .update-banner button {
+    font-size: 11px;
+    padding: 9px;
+  }
+  .modal-install {
+    margin: auto auto 12px;
+    max-height: calc(100dvh - 24px);
+    border-radius: 24px;
+  }
+  .modal-install .modal-body {
+    padding: 30px 23px 18px;
+  }
+  .modal-install h2 {
+    font-size: 27px;
+    line-height: 1.25;
+    max-width: 240px;
+    letter-spacing: -1px;
+  }
+  .modal-install .modal-illustration {
+    height: 102px;
+    margin-top: 18px;
+  }
+  .install-benefits {
+    margin: 16px 0;
+    gap: 6px;
+  }
+  .install-benefits > span {
+    font-size: 10px;
+    padding: 12px 4px;
+  }
+  .library-search input {
+    font-size: 16px;
+  }
+  .library-filters {
+    gap: 6px;
+  }
+  .library-filters button {
+    font-size: 10px;
+    padding: 9px 10px;
+  }
+  .section-heading > button {
+    font-size: 10px;
+  }
+  .modal-platforms .modal-body {
+    padding: 29px 20px;
+  }
+  .platform-directory article {
+    padding: 12px 10px;
+  }
+  .platform-directory article > span {
+    width: 31px;
+    height: 31px;
+  }
+}

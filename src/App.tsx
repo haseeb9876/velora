@@ -29,25 +29,29 @@ import {
   WifiOff,
   X,
   Zap,
+  RefreshCw,
+  Search,
 } from "lucide-react";
 import { api, durationLabel, sizeLabel } from "./api";
 import type { Analysis, Health, Job } from "./api";
+import platforms from "../shared/platforms.json";
+import { readDraft, normalizeLink } from "./preferences";
+import {
+  appBuild,
+  applyUpdate,
+  blockUpdates,
+  checkForUpdate,
+  noteInteraction,
+  updateState,
+} from "./pwa";
+import type { UpdateState } from "./pwa";
 
 type InstallEvent = Event & {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: string }>;
 };
-const platformNames = [
-  "YouTube",
-  "Instagram",
-  "TikTok",
-  "Facebook",
-  "X / Twitter",
-  "Vimeo",
-  "Reddit",
-  "Pinterest",
-];
-const icons = ["▶", "◎", "♪", "f", "𝕏", "v", "●", "p"];
+const platformNames = platforms.slice(0, 8).map((item) => item.name);
+const icons = platforms.slice(0, 8).map((item) => item.mark);
 function Logo() {
   return (
     <img
@@ -88,13 +92,34 @@ function getSharedUrl() {
 }
 
 export default function App() {
-  const [tab, setTab] = useState<"download" | "library">("download");
-  const [url, setUrl] = useState(getSharedUrl);
-  const [mode, setMode] = useState<"video" | "playlist">("video");
+  const [tab, setTab] = useState<"download" | "library">(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.get("view") === "library") return "library";
+    if (
+      params.get("view") === "download" ||
+      params.get("type") === "audio" ||
+      getSharedUrl()
+    )
+      return "download";
+    return readDraft().tab;
+  });
+  const [url, setUrl] = useState(
+    () => normalizeLink(getSharedUrl()) || readDraft().url,
+  );
+  const [mode, setMode] = useState<"video" | "playlist">(
+    () => readDraft().mode,
+  );
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
-  const [mediaType, setMediaType] = useState<"video" | "audio">("video");
-  const [profile, setProfile] = useState<"compatible" | "original">(
-    "compatible",
+  const [mediaType, setMediaType] = useState<"video" | "audio">(() =>
+    new URLSearchParams(location.search).get("type") === "audio" ||
+    localStorage.getItem("velora-format") === "audio"
+      ? "audio"
+      : "video",
+  );
+  const [profile, setProfile] = useState<"compatible" | "original">(() =>
+    localStorage.getItem("velora-playback") === "original"
+      ? "original"
+      : "compatible",
   );
   const autoDownloads = useRef(new Set(rememberedDownloads()));
   const [sentDownloads, setSentDownloads] = useState<Set<string>>(new Set());
@@ -107,14 +132,20 @@ export default function App() {
   const [toast, setToast] = useState("");
   const [jobs, setJobs] = useState<Job[]>([]);
   const [health, setHealth] = useState<Health | null>(null);
+  const [historyChecked, setHistoryChecked] = useState(false);
   const [connection, setConnection] = useState<
     "checking" | "online" | "offline"
   >("checking");
   const [installPrompt, setInstallPrompt] = useState<InstallEvent | null>(null);
   const [installed, setInstalled] = useState(isInstalled);
   const [modal, setModal] = useState<
-    "install" | "privacy" | "terms" | "help" | null
+    "install" | "privacy" | "terms" | "help" | "platforms" | null
   >(null);
+  const [release, setRelease] = useState<UpdateState>(updateState);
+  const [libraryQuery, setLibraryQuery] = useState("");
+  const [libraryFilter, setLibraryFilter] = useState("all");
+  const [platformQuery, setPlatformQuery] = useState("");
+  const [retrying, setRetrying] = useState<string | null>(null);
   const [mobileNav, setMobileNav] = useState(false);
   const [theme, setTheme] = useState(
     () => localStorage.getItem("velora-theme") || "light",
@@ -125,6 +156,71 @@ export default function App() {
   const activeCount = jobs.filter(
     (j) => j.status === "queued" || j.status === "processing",
   ).length;
+
+  useEffect(() => {
+    sessionStorage.setItem("velora-draft", JSON.stringify({ url, mode, tab }));
+  }, [url, mode, tab]);
+  useEffect(() => {
+    localStorage.setItem("velora-playback", profile);
+  }, [profile]);
+  useEffect(() => {
+    localStorage.setItem("velora-format", mediaType);
+  }, [mediaType]);
+  useEffect(() => {
+    blockUpdates(
+      !historyChecked ||
+        busy ||
+        queuing ||
+        Boolean(retrying) ||
+        activeCount > 0,
+      Boolean(modal) || (tab === "download" && Boolean(analysis)),
+    );
+  }, [
+    historyChecked,
+    busy,
+    queuing,
+    retrying,
+    activeCount,
+    modal,
+    tab,
+    analysis,
+  ]);
+  useEffect(() => {
+    const changed = () => setRelease(updateState());
+    window.addEventListener("velora-update", changed);
+    return () => window.removeEventListener("velora-update", changed);
+  }, []);
+  useEffect(() => {
+    const mobile =
+      matchMedia("(pointer: coarse)").matches ||
+      /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const last = Number(localStorage.getItem("velora-install-reminded") || 0);
+    if (
+      !mobile ||
+      installed ||
+      modal ||
+      busy ||
+      queuing ||
+      analysis ||
+      activeCount ||
+      Date.now() - last < 86400000
+    )
+      return;
+    let timer: ReturnType<typeof setTimeout>;
+    const offerInstall = () => {
+      if (
+        document.hidden ||
+        document.activeElement?.matches("input,textarea")
+      ) {
+        timer = setTimeout(offerInstall, 2000);
+        return;
+      }
+      localStorage.setItem("velora-install-reminded", String(Date.now()));
+      setModal("install");
+    };
+    timer = setTimeout(offerInstall, 1600);
+    return () => clearTimeout(timer);
+  }, [installed, modal, busy, queuing, analysis, activeCount]);
 
   useEffect(() => {
     pendingJobs.current = activeCount > 0;
@@ -141,6 +237,8 @@ export default function App() {
     const capture = (event: Event) => {
       event.preventDefault();
       setInstallPrompt(event as InstallEvent);
+      setInstalled(false);
+      localStorage.removeItem("velora-installed");
     };
     const complete = () => {
       localStorage.setItem("velora-installed", "true");
@@ -214,6 +312,7 @@ export default function App() {
       } catch {
         if (alive) setConnection("offline");
       }
+      if (alive) setHistoryChecked(true);
       polling = false;
       if (alive)
         timer = setTimeout(
@@ -264,7 +363,7 @@ export default function App() {
     event.preventDefault();
     setError("");
     try {
-      const parsed = new URL(url.trim());
+      const parsed = new URL(normalizeLink(url));
       if (parsed.protocol !== "https:") throw new Error();
     } catch {
       setError("Paste a complete HTTPS video link to get started.");
@@ -279,15 +378,18 @@ export default function App() {
     try {
       const data = await api<Analysis>("/api/inspect", {
         method: "POST",
-        body: JSON.stringify({ url: url.trim(), mode }),
+        body: JSON.stringify({ url: normalizeLink(url), mode }),
         signal: AbortSignal.any([
           controller.signal,
           AbortSignal.timeout(95000),
         ]),
       });
       setAnalysis(data);
-      setMediaType("video");
-      if (!data.options?.some((f) => f.kind === "video")) setMediaType("audio");
+      if (
+        data.kind === "video" &&
+        !data.options?.some((f) => f.kind === mediaType)
+      )
+        setMediaType(data.options?.[0]?.kind || "video");
       setEntries(data.entries?.map((e) => e.id) || []);
       setTimeout(
         () =>
@@ -338,6 +440,7 @@ export default function App() {
     }
   }
   async function saveFile(job: Job, automatic = false) {
+    noteInteraction();
     try {
       const data = await api<{ url: string }>(`/api/jobs/${job.id}/ticket`, {
         method: "POST",
@@ -376,18 +479,53 @@ export default function App() {
       setToast((e as Error).message);
     }
   }
+  async function retryJob(job: Job) {
+    setRetrying(job.id);
+    try {
+      const data = await api<{ jobs: Job[] }>(`/api/jobs/${job.id}/retry`, {
+        method: "POST",
+      });
+      data.jobs.forEach((item) => autoDownloads.current.add(item.id));
+      sessionStorage.setItem(
+        "velora-auto-downloads",
+        JSON.stringify([...autoDownloads.current]),
+      );
+      pendingJobs.current = true;
+      setJobs((previous) => [...data.jobs, ...previous]);
+      setLibraryFilter("all");
+      setLibraryQuery("");
+      window.dispatchEvent(new Event("velora-jobs-changed"));
+      setToast("Trying that download again with fresh source details.");
+    } catch (error) {
+      setToast((error as Error).message);
+    } finally {
+      setRetrying(null);
+    }
+  }
+  function closeModal() {
+    if (modal === "install")
+      localStorage.setItem("velora-install-reminded", String(Date.now()));
+    setModal(null);
+  }
   async function install() {
+    localStorage.setItem("velora-install-reminded", String(Date.now()));
     if (!installPrompt) {
       setModal("install");
       return;
     }
-    await installPrompt.prompt();
-    await installPrompt.userChoice;
-    setInstallPrompt(null);
+    try {
+      await installPrompt.prompt();
+      const choice = await installPrompt.userChoice;
+      if (choice.outcome === "accepted") setModal(null);
+    } catch {
+      setModal("install");
+    } finally {
+      setInstallPrompt(null);
+    }
   }
   async function paste() {
     try {
-      setUrl(await navigator.clipboard.readText());
+      setUrl(normalizeLink(await navigator.clipboard.readText()));
       setAnalysis(null);
       setError("");
     } catch {
@@ -401,6 +539,23 @@ export default function App() {
   }
   const displayedFormats =
     analysis?.options?.filter((f) => f.kind === mediaType) || [];
+
+  const visibleJobs = jobs.filter(
+    (job) =>
+      job.status !== "cancelled" &&
+      job.title.toLowerCase().includes(libraryQuery.toLowerCase()) &&
+      (libraryFilter === "all" ||
+        (libraryFilter === "active"
+          ? ["queued", "processing"].includes(job.status)
+          : libraryFilter === "ready"
+            ? job.status === "ready"
+            : ["failed", "expired"].includes(job.status))),
+  );
+  const directory = platforms.filter((item) =>
+    `${item.name} ${item.hint}`
+      .toLowerCase()
+      .includes(platformQuery.toLowerCase()),
+  );
 
   return (
     <div className="app-shell">
@@ -487,7 +642,7 @@ export default function App() {
             <span>
               <span className="tiny-spark">✦</span> Made for your moments
             </span>
-            <span>v1.0</span>
+            <span title={`Build ${appBuild}`}>v1.2</span>
           </div>
         </div>
       </aside>
@@ -535,6 +690,39 @@ export default function App() {
           </div>
         </header>
         <main>
+          {release !== "current" && (
+            <aside className="update-banner" role="status">
+              <RefreshCw
+                size={20}
+                className={release === "applying" ? "spin" : ""}
+              />
+              <div>
+                <strong>
+                  {release === "applying"
+                    ? "Refreshing your Velora…"
+                    : "A fresh version is ready."}
+                </strong>
+                <p>
+                  {busy || activeCount || queuing
+                    ? "Your current task can finish first. The update will follow."
+                    : "Your link and preferences stay with you."}
+                </p>
+              </div>
+              <button
+                disabled={
+                  !historyChecked ||
+                  release === "applying" ||
+                  busy ||
+                  activeCount > 0 ||
+                  queuing ||
+                  Boolean(retrying)
+                }
+                onClick={() => applyUpdate(true)}
+              >
+                Update now
+              </button>
+            </aside>
+          )}
           {!installed && (
             <aside className="install-banner" aria-label="Install Velora app">
               <Logo />
@@ -625,6 +813,16 @@ export default function App() {
                       }
                       value={url}
                       disabled={busy}
+                      onPaste={(e) => {
+                        const text = e.clipboardData.getData("text");
+                        const link = normalizeLink(text);
+                        if (link !== text.trim()) {
+                          e.preventDefault();
+                          setUrl(link);
+                          setAnalysis(null);
+                          setError("");
+                        }
+                      }}
                       onChange={(e) => {
                         setUrl(e.target.value);
                         setError("");
@@ -765,7 +963,7 @@ export default function App() {
                         >
                           <Film size={15} />{" "}
                           {analysis.options?.some(
-                            (f) => f.kind === "video" && f.hasAudio !== false,
+                            (f) => f.kind === "video" && f.hasAudio === true,
                           )
                             ? "Video + audio"
                             : "Video"}
@@ -840,6 +1038,10 @@ export default function App() {
                                     : ""}
                                   {format.hasAudio === false
                                     ? " · Silent source"
+                                    : ""}
+                                  {format.hasAudio === null ||
+                                  format.audioUnconfirmed
+                                    ? " · Audio checked during download"
                                     : ""}
                                   {converting
                                     ? " · Optimized for playback"
@@ -961,17 +1163,29 @@ export default function App() {
               <section className="platforms-section" id="platforms">
                 <div className="section-heading">
                   <h2>All your favorites. One place.</h2>
-                  <span>
-                    {platformNames.length} platforms <ArrowUpRight size={13} />
-                  </span>
+                  <button
+                    onClick={() => {
+                      setPlatformQuery("");
+                      setModal("platforms");
+                    }}
+                  >
+                    {platforms.length} platforms <ArrowUpRight size={13} />
+                  </button>
                 </div>
                 <div className="platform-grid">
                   {platformNames.map((name, i) => (
-                    <div className={`platform platform-${i}`} key={name}>
+                    <button
+                      className={`platform platform-${i}`}
+                      key={name}
+                      onClick={() => {
+                        setPlatformQuery(name);
+                        setModal("platforms");
+                      }}
+                    >
                       <span className="platform-logo">{icons[i]}</span>
                       <span>{name}</span>
                       {i > 3 && <small>EXTENDED</small>}
-                    </div>
+                    </button>
                   ))}
                 </div>
                 <p className="platform-note">
@@ -1052,6 +1266,40 @@ export default function App() {
                   Keep this page handy to save your files.
                 </div>
               )}
+              {jobs.some((job) => job.status !== "cancelled") && (
+                <div className="library-controls">
+                  <label className="library-search">
+                    <Search size={17} />
+                    <input
+                      aria-label="Search your downloads"
+                      type="search"
+                      placeholder="Find a download…"
+                      value={libraryQuery}
+                      onChange={(e) => setLibraryQuery(e.target.value)}
+                    />
+                  </label>
+                  <div
+                    className="library-filters"
+                    role="group"
+                    aria-label="Filter downloads"
+                  >
+                    {[
+                      ["all", "All"],
+                      ["active", "In progress"],
+                      ["ready", "Ready"],
+                      ["attention", "Needs attention"],
+                    ].map(([value, label]) => (
+                      <button
+                        key={value}
+                        aria-pressed={libraryFilter === value}
+                        onClick={() => setLibraryFilter(value)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               {jobs.filter((j) => j.status !== "cancelled").length === 0 ? (
                 <div className="empty-library">
                   <div className="empty-icon">
@@ -1071,120 +1319,137 @@ export default function App() {
                 </div>
               ) : (
                 <div className="job-list">
-                  {jobs
-                    .filter((j) => j.status !== "cancelled")
-                    .map((job) => (
-                      <article className="job-card" key={job.id}>
-                        <div className="job-icon">
-                          {job.label.includes("MP3") ||
-                          job.label.includes("M4A") ? (
-                            <Headphones size={23} />
+                  {visibleJobs.map((job) => (
+                    <article className="job-card" key={job.id}>
+                      <div className="job-icon">
+                        {job.label.includes("MP3") ||
+                        job.label.includes("M4A") ? (
+                          <Headphones size={23} />
+                        ) : (
+                          <Film size={23} />
+                        )}
+                      </div>
+                      <div className="job-info">
+                        <h2>{job.title}</h2>
+                        <p>
+                          {job.label} <span>·</span>{" "}
+                          {job.size
+                            ? sizeLabel(job.size)
+                            : new Date(job.created * 1000).toLocaleTimeString(
+                                [],
+                                { hour: "2-digit", minute: "2-digit" },
+                              )}
+                        </p>
+                        <div className={`job-status status-${job.status}`}>
+                          {job.status === "processing" ? (
+                            <>
+                              <LoaderCircle className="spin" size={12} />
+                              {job.progress >= 98
+                                ? "Checking video and audio…"
+                                : job.progress >= 96
+                                  ? "Optimizing playback…"
+                                  : job.progress >= 95
+                                    ? "Finishing your file…"
+                                    : `Preparing · ${Math.round(job.progress)}%`}
+                            </>
+                          ) : job.status === "ready" ? (
+                            <>
+                              <Check size={13} />{" "}
+                              {sentDownloads.has(job.id)
+                                ? "Sent to browser"
+                                : "Ready to save"}
+                            </>
+                          ) : job.status === "queued" ? (
+                            <>
+                              <Clock3 size={12} /> Waiting in queue
+                            </>
+                          ) : job.status === "expired" ? (
+                            "File expired · Download it again"
                           ) : (
-                            <Film size={23} />
+                            job.error || "Download failed"
                           )}
                         </div>
-                        <div className="job-info">
-                          <h2>{job.title}</h2>
-                          <p>
-                            {job.label} <span>·</span>{" "}
-                            {job.size
-                              ? sizeLabel(job.size)
-                              : new Date(job.created * 1000).toLocaleTimeString(
-                                  [],
-                                  { hour: "2-digit", minute: "2-digit" },
-                                )}
-                          </p>
-                          <div className={`job-status status-${job.status}`}>
-                            {job.status === "processing" ? (
-                              <>
-                                <LoaderCircle className="spin" size={12} />
-                                {job.progress >= 98
-                                  ? "Checking video and audio…"
-                                  : job.progress >= 96
-                                    ? "Optimizing playback…"
-                                    : job.progress >= 95
-                                      ? "Finishing your file…"
-                                      : `Preparing · ${Math.round(job.progress)}%`}
-                              </>
-                            ) : job.status === "ready" ? (
-                              <>
-                                <Check size={13} />{" "}
-                                {sentDownloads.has(job.id)
-                                  ? "Sent to browser"
-                                  : "Ready to save"}
-                              </>
-                            ) : job.status === "queued" ? (
-                              <>
-                                <Clock3 size={12} /> Waiting in queue
-                              </>
-                            ) : job.status === "expired" ? (
-                              "File expired · Download it again"
-                            ) : (
-                              job.error || "Download failed"
-                            )}
-                          </div>
-                          {job.status === "processing" && (
-                            <div
-                              className="progress-track"
-                              role="progressbar"
-                              aria-label="Download progress"
-                              aria-valuenow={job.progress}
-                              aria-valuemin={0}
-                              aria-valuemax={100}
-                            >
-                              <span
-                                style={{
-                                  width: `${Math.max(3, job.progress)}%`,
-                                }}
-                              />
-                            </div>
-                          )}
-                        </div>
-                        <div className="job-actions">
-                          {job.status === "ready" && (
-                            <button
-                              className="primary-button compact"
-                              onClick={() => saveFile(job)}
-                            >
-                              <ArrowDownToLine size={16} />
-                              <span>
-                                {sentDownloads.has(job.id)
-                                  ? "Save again"
-                                  : "Save file"}
-                              </span>
-                            </button>
-                          )}
-                          {(job.status === "failed" ||
-                            job.status === "expired") && (
-                            <button
-                              className="secondary-button compact"
-                              onClick={() => setTab("download")}
-                            >
-                              Try another link
-                            </button>
-                          )}
-                          <button
-                            className="icon-button"
-                            aria-label={
-                              job.status === "processing" ||
-                              job.status === "queued"
-                                ? `Cancel ${job.title}`
-                                : `Remove ${job.title}`
-                            }
-                            onClick={() => removeJob(job)}
+                        {job.status === "processing" && (
+                          <div
+                            className="progress-track"
+                            role="progressbar"
+                            aria-label="Download progress"
+                            aria-valuenow={job.progress}
+                            aria-valuemin={0}
+                            aria-valuemax={100}
                           >
-                            {job.status === "processing" ||
-                            job.status === "queued" ? (
-                              <X size={17} />
-                            ) : (
-                              <Trash2 size={16} />
-                            )}
+                            <span
+                              style={{
+                                width: `${Math.max(3, job.progress)}%`,
+                              }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                      <div className="job-actions">
+                        {job.status === "ready" && (
+                          <button
+                            className="primary-button compact"
+                            onClick={() => saveFile(job)}
+                          >
+                            <ArrowDownToLine size={16} />
+                            <span>
+                              {sentDownloads.has(job.id)
+                                ? "Save again"
+                                : "Save file"}
+                            </span>
                           </button>
-                        </div>
-                      </article>
-                    ))}
+                        )}
+                        {(job.status === "failed" ||
+                          job.status === "expired") && (
+                          <button
+                            className="secondary-button compact"
+                            disabled={Boolean(retrying)}
+                            onClick={() => void retryJob(job)}
+                          >
+                            {retrying === job.id
+                              ? "Retrying…"
+                              : "Retry download"}
+                          </button>
+                        )}
+                        <button
+                          className="icon-button"
+                          aria-label={
+                            job.status === "processing" ||
+                            job.status === "queued"
+                              ? `Cancel ${job.title}`
+                              : `Remove ${job.title}`
+                          }
+                          onClick={() => removeJob(job)}
+                        >
+                          {job.status === "processing" ||
+                          job.status === "queued" ? (
+                            <X size={17} />
+                          ) : (
+                            <Trash2 size={16} />
+                          )}
+                        </button>
+                      </div>
+                    </article>
+                  ))}
                 </div>
               )}
+              {jobs.some((job) => job.status !== "cancelled") &&
+                visibleJobs.length === 0 && (
+                  <div className="no-matches">
+                    <Search size={24} />
+                    <h2>No matching downloads.</h2>
+                    <p>Try another search or filter.</p>
+                    <button
+                      onClick={() => {
+                        setLibraryQuery("");
+                        setLibraryFilter("all");
+                      }}
+                    >
+                      Clear filters
+                    </button>
+                  </div>
+                )}
               <p className="library-note">
                 <ShieldCheck size={15} /> Files are removed from the worker
                 after {health?.limits.retentionHours || 2} hours. Saved files
@@ -1200,6 +1465,19 @@ export default function App() {
             <div>
               <button onClick={() => setModal("privacy")}>Privacy</button>
               <button onClick={() => setModal("terms")}>Terms</button>
+              <button
+                title={`Build ${appBuild}`}
+                onClick={() => {
+                  void checkForUpdate();
+                  setToast(
+                    navigator.onLine
+                      ? "Checking for app updates…"
+                      : "Reconnect to check for updates.",
+                  );
+                }}
+              >
+                Check updates
+              </button>
               <span
                 className={`connection ${connection}`}
                 title={
@@ -1244,16 +1522,19 @@ export default function App() {
       )}
       {modal && (
         <Modal
+          variant={modal}
           title={
             modal === "install"
-              ? "Your moments, one tap away."
+              ? "Make yourself at home."
               : modal === "privacy"
                 ? "Your privacy, in plain English."
                 : modal === "terms"
                   ? "A few things to know."
-                  : "From a link to your library."
+                  : modal === "platforms"
+                    ? "Your favorite platforms, together."
+                    : "From a link to your library."
           }
-          onClose={() => setModal(null)}
+          onClose={closeModal}
         >
           {modal === "install" ? (
             <>
@@ -1262,10 +1543,21 @@ export default function App() {
                 <MonitorSmartphone size={46} />
               </div>
               <p>
-                Install Velora for a dedicated app window and quick access from
-                your home screen. Downloads still need an internet connection
-                and an online worker.
+                Add Velora to your home screen. Next time, tap the Velora icon
+                to come straight back to your downloads. No app store, no
+                account, no subscription.
               </p>
+              <div className="install-benefits">
+                <span>
+                  <Zap size={16} /> Quick access
+                </span>
+                <span>
+                  <RefreshCw size={16} /> Fresh updates
+                </span>
+                <span>
+                  <ShieldCheck size={16} /> No sign-up
+                </span>
+              </div>
               {installPrompt ? (
                 <button className="primary-button" onClick={install}>
                   Install Velora <Plus size={17} />
@@ -1293,6 +1585,40 @@ export default function App() {
                 On compatible devices, you can also share a video link directly
                 to Velora from another app.
               </p>
+              <button className="install-later" onClick={closeModal}>
+                Not now, continue browsing
+              </button>
+            </>
+          ) : modal === "platforms" ? (
+            <>
+              <p>
+                Paste a public link from any platform below. Available formats
+                depend on the source; private, protected and live content is not
+                supported.
+              </p>
+              <label className="library-search">
+                <Search size={17} />
+                <input
+                  aria-label="Search platforms"
+                  placeholder="Find your platform…"
+                  value={platformQuery}
+                  onChange={(e) => setPlatformQuery(e.target.value)}
+                />
+              </label>
+              <div className="platform-directory">
+                {directory.map((item) => (
+                  <article key={item.name}>
+                    <span>{item.mark}</span>
+                    <div>
+                      <h3>{item.name}</h3>
+                      <p>{item.hint}</p>
+                    </div>
+                  </article>
+                ))}
+              </div>
+              {directory.length === 0 && (
+                <p>No match yet. Try one of the listed platforms.</p>
+              )}
             </>
           ) : modal === "privacy" ? (
             <>
@@ -1313,10 +1639,11 @@ export default function App() {
                 thumbnails load from the source platform.
               </p>
               <p>
-                Your theme preference and session token are stored on this
-                device. There is no advertising or tracking analytics in this
-                version. Clearing browser data removes access to your queue; it
-                does not immediately delete worker files.
+                Your session, theme, format and installation preferences are
+                stored on this device. Your current link is kept in this tab so
+                it survives app updates. There is no advertising or tracking
+                analytics in this version. Clearing browser data removes access
+                to your queue; it does not immediately delete worker files.
               </p>
               <p>
                 Use the remove button in My downloads to delete a prepared file
@@ -1404,10 +1731,12 @@ export default function App() {
 }
 
 function Modal({
+  variant,
   title,
   onClose,
   children,
 }: {
+  variant: string;
   title: string;
   onClose: () => void;
   children: React.ReactNode;
@@ -1421,7 +1750,7 @@ function Modal({
   return (
     <dialog
       ref={ref}
-      className="modal"
+      className={`modal modal-${variant}`}
       onCancel={onClose}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();

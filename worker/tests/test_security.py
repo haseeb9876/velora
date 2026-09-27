@@ -38,3 +38,26 @@ def test_silent_source_remains_downloadable_and_is_labeled():
     assert len(result) == 1
     assert result[0]['hasAudio'] is False
     assert result[0]['spec'] == '137'
+
+
+@pytest.mark.parametrize('url', ['https://dai.ly/x123', 'https://clips.twitch.tv/PublicClip', 'https://bsky.app/profile/example/post/123', 'https://www.linkedin.com/posts/example-123-abcd', 'https://www.snapchat.com/spotlight/example'])
+def test_additional_platform_hosts_are_accepted(url):
+    assert validate_url(url) == url
+
+@pytest.mark.parametrize('url', ['https://bsky.app.evil.example/post/1', 'https://www.snapchat.com@127.0.0.1/', 'https://clips.twitch.tv:8080/a', 'https://private.example/video'])
+def test_expanded_catalog_still_rejects_untrusted_destinations(url):
+    with pytest.raises(ValueError): validate_url(url)
+
+
+def test_unknown_audio_metadata_is_not_mislabeled_as_silent():
+    options = formats({'duration':5,'formats':[{'format_id':'1080','height':1080,'ext':'mp4','vcodec':None,'acodec':None,'protocol':'https'}]})
+    video = next(f for f in options if f['kind'] == 'video')
+    assert video['hasAudio'] is None
+    audio = [f for f in options if f['kind'] == 'audio']
+    assert {f['ext'] for f in audio} == {'mp3', 'm4a'}
+    assert all(f['audioUnconfirmed'] for f in audio)
+
+
+def test_unknown_resolution_keeps_extractor_preference_on_ties():
+    options = formats({'formats':[{'format_id':id,'ext':'mp4','protocol':'https'} for id in ['low','high']]})
+    assert next(f for f in options if f['kind'] == 'video')['spec'] == 'high'

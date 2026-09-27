@@ -1,5 +1,9 @@
 import { test, expect } from "@playwright/test";
-test.beforeEach(async ({ page }) => {
+test.beforeEach(async ({ page }, testInfo) => {
+  if (!testInfo.title.includes("first visit"))
+    await page.addInitScript(() =>
+      localStorage.setItem("velora-install-reminded", String(Date.now())),
+    );
   let created = false;
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
@@ -28,6 +32,7 @@ test.beforeEach(async ({ page }) => {
           {
             id: "1080",
             kind: "video",
+            hasAudio: true,
             label: "1080p",
             height: 1080,
             ext: "mp4",
@@ -37,6 +42,7 @@ test.beforeEach(async ({ page }) => {
           {
             id: "720",
             kind: "video",
+            hasAudio: true,
             label: "720p",
             height: 720,
             ext: "mp4",
@@ -222,4 +228,181 @@ test("original format can be requested without compatibility conversion", async 
   );
   await page.getByRole("button", { name: "Download 1080p MP4" }).click();
   expect((await posting).postDataJSON().profile).toBe("original");
+});
+
+test("first visit offers mobile installation and respects Not now", async ({
+  page,
+}, testInfo) => {
+  await page.goto("/");
+  if (testInfo.project.name === "mobile") {
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Make yourself at home." }),
+    ).toBeVisible();
+    await page
+      .getByRole("button", { name: "Not now, continue browsing" })
+      .click();
+    await page.reload();
+    await page.waitForTimeout(1800);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Install app", exact: true }),
+    ).toBeVisible();
+  } else {
+    await page.waitForTimeout(1800);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+  }
+});
+
+test("install action uses a native prompt only after a user tap", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.evaluate(() => {
+    (window as any).__promptCalls = 0;
+    const event = new Event("beforeinstallprompt", { cancelable: true });
+    Object.assign(event, {
+      prompt: async () => {
+        (window as any).__promptCalls++;
+      },
+      userChoice: Promise.resolve({ outcome: "accepted" }),
+    });
+    window.dispatchEvent(event);
+  });
+  expect(await page.evaluate(() => (window as any).__promptCalls)).toBe(0);
+  await page.getByRole("button", { name: "Install app", exact: true }).click();
+  expect(await page.evaluate(() => (window as any).__promptCalls)).toBe(1);
+  await page.evaluate(() => window.dispatchEvent(new Event("appinstalled")));
+  await expect(
+    page.getByRole("button", { name: "Install app", exact: true }),
+  ).toHaveCount(0);
+});
+
+test("shared text becomes a clean link and the platform directory is searchable", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByLabel("Drop a link.")
+    .fill("Watch this! https://bsky.app/profile/example/post/123");
+  await page.getByRole("button", { name: "13 platforms" }).click();
+  await page.getByRole("textbox", { name: "Search platforms" }).fill("Bluesky");
+  await expect(
+    page
+      .getByRole("dialog")
+      .getByRole("heading", { name: "Bluesky", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page
+      .getByRole("dialog")
+      .getByRole("heading", { name: "YouTube", exact: true }),
+  ).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await page.getByLabel("Drop a link.").evaluate((input: HTMLInputElement) => {
+    const transfer = new DataTransfer();
+    transfer.setData(
+      "text/plain",
+      "Watch this! https://bsky.app/profile/example/post/123",
+    );
+    input.dispatchEvent(
+      new ClipboardEvent("paste", {
+        clipboardData: transfer,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  });
+  await expect(page.getByLabel("Drop a link.")).toHaveValue(
+    "https://bsky.app/profile/example/post/123",
+  );
+  await page.reload();
+  await expect(page.getByLabel("Drop a link.")).toHaveValue(
+    "https://bsky.app/profile/example/post/123",
+  );
+});
+
+test("download search, filters and retry use the selected job", async ({
+  page,
+}) => {
+  await page.route("**/api/jobs", (route) =>
+    route.fulfill({
+      json: {
+        jobs: [
+          {
+            id: "failed",
+            title: "Mountain clip",
+            label: "720p",
+            status: "failed",
+            progress: 0,
+            created: Date.now() / 1000,
+            error: "Source temporarily unavailable",
+          },
+          {
+            id: "ready",
+            title: "Ocean clip",
+            label: "1080p",
+            status: "ready",
+            progress: 100,
+            created: Date.now() / 1000,
+            expires: Date.now() / 1000 + 7000,
+          },
+        ],
+      },
+    }),
+  );
+  await page.route("**/api/jobs/failed/retry", (route) =>
+    route.fulfill({ status: 201, json: { jobs: [] } }),
+  );
+  await page.goto("/?view=library");
+  await page
+    .getByRole("searchbox", { name: "Search your downloads" })
+    .fill("Mountain");
+  await expect(
+    page.getByRole("heading", { name: "Mountain clip" }),
+  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Ocean clip" })).toHaveCount(
+    0,
+  );
+  await page.getByRole("button", { name: "Ready", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "No matching downloads." }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Clear filters" }).click();
+  const retried = page.waitForRequest(
+    (request) =>
+      request.url().endsWith("/api/jobs/failed/retry") &&
+      request.method() === "POST",
+  );
+  await page
+    .getByRole("button", { name: "Retry download", exact: true })
+    .click();
+  await retried;
+});
+
+test("saved playback choices and app shortcuts survive reopening", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByLabel("Drop a link.")
+    .fill("https://youtube.com/watch?v=test");
+  await page.getByRole("button", { name: "Find my video" }).click();
+  await page.getByRole("button", { name: "Original · faster" }).click();
+  await page.getByRole("button", { name: "Audio only", exact: true }).click();
+  await page.goto("/?view=library");
+  await page.goto("/?type=audio");
+  await expect(page.getByRole("heading", { name: /Keep what/ })).toBeVisible();
+  await page.getByRole("button", { name: "Find my video" }).click();
+  await expect(
+    page.getByRole("button", { name: /Download MP3/ }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Video + audio", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Original · faster" }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await page.goto("/?view=library");
+  await page.goto("/?view=download");
+  await expect(page.getByRole("heading", { name: /Keep what/ })).toBeVisible();
 });

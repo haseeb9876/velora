@@ -7,7 +7,8 @@ export type Format = {
   size: number | null;
   estimated: boolean;
   fps?: number;
-  hasAudio?: boolean;
+  hasAudio?: boolean | null;
+  audioUnconfirmed?: boolean;
   sourceExt?: string;
   codec?: string;
   requiresConversion?: boolean;
@@ -35,12 +36,7 @@ export type Job = {
   title: string;
   label: string;
   status:
-    | "queued"
-    | "processing"
-    | "ready"
-    | "failed"
-    | "cancelled"
-    | "expired";
+    "queued" | "processing" | "ready" | "failed" | "cancelled" | "expired";
   progress: number;
   error?: string;
   size?: number;

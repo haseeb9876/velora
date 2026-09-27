@@ -48,3 +48,18 @@ This is a deployed small beta, not a guarantee of unrestricted social-platform d
 - Production verification after release: a real 1440p Facebook download saved automatically from the public mobile browser with H.264 video (1440 × 2560) and AAC audio; full-file decoding passed. Initial lookup took 10.48 seconds and preparation plus saving took 92.03 seconds on this four-core Ubuntu/free-tunnel setup. A subsequent cached lookup through public HTTPS took 3.848 seconds. These observations distinguish source lookup speed from high-resolution preparation time.
 - Public responsive layouts passed at 320, 390, 768 and 1440 pixels. The logo and license-notice asset routes returned the correct content types; the updated offline PWA shell passed. Homepage screenshots were refreshed from the deployed app.
 - Final release checks: 36 backend, 12 desktop/mobile browser, and 1 PWA check passed (49 total). The production worker and connector are active; temporary staging services were stopped and smoke-test downloads removed.
+
+## 27 September 2026 install and update release
+
+- First-visit mobile installation dialog with native-prompt handling, manual instructions, a 24-hour reminder snooze and suppression after installation is detected. Reviewed at 320px and 390px without horizontal overflow.
+- Versioned release assets and revalidation headers replace the fixed service-worker version. Two real builds verified periodic detection, manual activation preserving a typed link, automatic activation after active downloads finish, offline reopening, and an update in a second tab without interrupting the first tab's focused draft.
+- Library search/status filters, owned retry with fresh format selection, remembered format/playback preferences, app shortcuts, share-text normalization and a searchable shared 13-platform catalog.
+- Missing source audio metadata no longer means “silent.” Video keeps available tracks; audio-only choices are offered with an availability note and actual output is validated.
+- Added backend coverage for new platform hostnames and malicious lookalikes, retry ownership/rate/queue limits, expiry before scheduled cleanup, source-quality changes and unknown audio metadata.
+- Live analysis succeeded for Dailymotion, Twitch, Bluesky, LinkedIn and Snapchat Spotlight samples. One Dailymotion sample was removed and one Bluesky sample was unavailable; alternate public samples succeeded. Individual-link failures remain possible.
+- Real Twitch 1080p video saved with H.264/AAC, and MP3 extraction passed. Bluesky 360p video saved with H.264/AAC, and MP3 extraction passed. Test files were removed after verification.
+
+- Real Snapchat Spotlight video saved with H.264/AAC and MP3 extraction passed; test files were removed. Dailymotion and LinkedIn were verified for analysis, without a completed file claim in this release.
+- The final preview check exposed `Vary: Origin` headers preventing offline module/cache matches. Public precached assets now match by URL independent of that header; the two-release server includes the same header for regression coverage.
+
+- Final automated checks: 49 backend, 22 mobile/desktop UI, 3 real two-release update and 1 production offline PWA check passed (75 total). Production dependency audit reported zero vulnerabilities. The TypeScript/Vite build and whitespace checks passed.

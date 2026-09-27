@@ -1,0 +1,80 @@
+[
+  {
+    "name": "YouTube",
+    "hosts": ["youtube.com", "youtu.be"],
+    "hint": "Public videos, Shorts and playlists",
+    "mark": "▶"
+  },
+  {
+    "name": "Instagram",
+    "hosts": ["instagram.com"],
+    "hint": "Public reels and video posts",
+    "mark": "◎"
+  },
+  {
+    "name": "TikTok",
+    "hosts": ["tiktok.com"],
+    "hint": "Public videos and shared video links",
+    "mark": "♪"
+  },
+  {
+    "name": "Facebook",
+    "hosts": ["facebook.com", "fb.watch"],
+    "hint": "Public videos, reels and watch links",
+    "mark": "f"
+  },
+  {
+    "name": "X",
+    "hosts": ["twitter.com", "x.com"],
+    "hint": "Public posts containing video",
+    "mark": "𝕏"
+  },
+  {
+    "name": "Vimeo",
+    "hosts": ["vimeo.com"],
+    "hint": "Public videos; some require sign-in",
+    "mark": "v"
+  },
+  {
+    "name": "Reddit",
+    "hosts": ["reddit.com", "redd.it"],
+    "hint": "Public posts with supported video",
+    "mark": "●"
+  },
+  {
+    "name": "Pinterest",
+    "hosts": ["pinterest.com", "pin.it"],
+    "hint": "Public video pins",
+    "mark": "p"
+  },
+  {
+    "name": "Dailymotion",
+    "hosts": ["dailymotion.com", "dai.ly"],
+    "hint": "Public videos and playlists",
+    "mark": "d"
+  },
+  {
+    "name": "Twitch",
+    "hosts": ["twitch.tv"],
+    "hint": "Public clips and recordings; no live streams",
+    "mark": "T"
+  },
+  {
+    "name": "Bluesky",
+    "hosts": ["bsky.app"],
+    "hint": "Public video posts",
+    "mark": "B"
+  },
+  {
+    "name": "LinkedIn",
+    "hosts": ["linkedin.com"],
+    "hint": "Public video posts; sign-in restrictions may apply",
+    "mark": "in"
+  },
+  {
+    "name": "Snapchat",
+    "hosts": ["snapchat.com"],
+    "hint": "Public Spotlight links",
+    "mark": "S"
+  }
+]

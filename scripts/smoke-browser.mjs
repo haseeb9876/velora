@@ -29,6 +29,9 @@ page.on("response", async (response) => {
   }
 });
 try {
+  await context.addInitScript(() =>
+    localStorage.setItem("velora-install-reminded", String(Date.now())),
+  );
   await page.goto(appUrl);
   await page
     .getByText("Worker online", { exact: true })

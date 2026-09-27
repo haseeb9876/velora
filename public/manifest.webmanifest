@@ -1,6 +1,6 @@
 {
   "id": "/",
-  "name": "Velora — Keep the moment",
+  "name": "Velora \u2014 Keep the moment",
   "short_name": "Velora",
   "description": "Save available social videos and audio in your preferred quality.",
   "start_url": "/",
@@ -34,7 +34,46 @@
     "action": "/",
     "method": "GET",
     "enctype": "application/x-www-form-urlencoded",
-    "params": { "title": "title", "text": "text", "url": "url" }
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
+    }
   },
-  "categories": ["utilities", "entertainment"]
+  "categories": ["utilities", "entertainment"],
+  "shortcuts": [
+    {
+      "name": "New download",
+      "short_name": "Download",
+      "url": "/?view=download",
+      "icons": [
+        {
+          "src": "/icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "My downloads",
+      "short_name": "Downloads",
+      "url": "/?view=library",
+      "icons": [
+        {
+          "src": "/icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Audio downloader",
+      "short_name": "Audio",
+      "url": "/?type=audio",
+      "icons": [
+        {
+          "src": "/icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
+  ]
 }

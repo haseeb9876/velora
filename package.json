@@ -9,7 +9,8 @@
     "preview": "vite preview --host 127.0.0.1",
     "test:e2e": "playwright test",
     "test:pwa": "playwright test -c playwright.pwa.config.ts",
-    "dev:full": "python3 scripts/dev.py"
+    "dev:full": "python3 scripts/dev.py",
+    "test:updates": "playwright test -c playwright.updates.config.ts"
   },
   "dependencies": {
     "@fontsource/dm-sans": "^5.3.0",

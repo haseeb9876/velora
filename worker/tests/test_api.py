@@ -49,3 +49,42 @@ def test_origin_auth_and_invalid_option(client):
     assert client.post('/api/jobs',json={'analysis_id':analysis['id'],'option_id':'$(id)'},headers=headers).status_code==422
     expired=sign({'type':'file','job':'fake','sub':'test','exp':time.time()-1})
     assert client.get('/files/fake?ticket='+expired).status_code==410
+
+
+def test_retry_is_owned_rechecks_source_and_obeys_existing_queue_rules(client, monkeypatch):
+    from security import verify
+    alice, bob = token(client), token(client)
+    owner = verify(alice['Authorization'].removeprefix('Bearer '))['sub']
+    job = {'id':'retry-fixture','owner':owner,'status':'failed','created':time.time(),'url':'https://youtube.com/watch?v=test','title':'Previous title','label':'720p · MP4','option':{'kind':'video','height':720,'ext':'mp4'},'profile':'original'}
+    service.save(job)
+    assert client.post('/api/jobs/retry-fixture/retry',headers=bob).status_code == 404
+    monkeypatch.setattr(service.media, 'inspect', lambda *a, **kw: {'kind':'video','title':'Fresh source title','options':[{'id':'new','spec':'18','kind':'video','label':'480p','height':480,'ext':'mp4'}]})
+    response = client.post('/api/jobs/retry-fixture/retry',headers=alice)
+    assert response.status_code == 201
+    fresh_id = response.json()['jobs'][0]['id']
+    assert fresh_id != job['id']
+    for _ in range(100):
+        fresh = service.store.get(fresh_id,'job',owner)
+        if fresh['status'] == 'ready': break
+        time.sleep(.02)
+    assert fresh['status'] == 'ready'
+    assert fresh['title'] == 'Fresh source title'
+    assert fresh['label'] == '480p · MP4'
+    assert fresh['option']['profile'] == 'original'
+    assert client.post(f'/api/jobs/{fresh_id}/retry',headers=alice).status_code == 409
+
+    monkeypatch.setattr(service.config, 'RATE', 0)
+    assert client.post('/api/jobs/retry-fixture/retry', headers=alice).status_code == 429
+    monkeypatch.setattr(service.config, 'RATE', 40)
+    monkeypatch.setattr(service.config, 'MAX_QUEUE', 0)
+    assert client.post('/api/jobs/retry-fixture/retry', headers=alice).status_code == 503
+
+
+def test_expired_ready_file_can_retry_before_cleanup_runs(client):
+    from security import verify
+    alice = token(client)
+    user = verify(alice['Authorization'].removeprefix('Bearer '))['sub']
+    service.save({'id':'expired-fixture','owner':user,'status':'ready','expires':time.time()-1,'created':time.time(),'url':'https://youtube.com/watch?v=test','title':'Expired video','label':'Original','option':{'kind':'video','ext':'mp4'}})
+    response = client.post('/api/jobs/expired-fixture/retry', headers=alice)
+    assert response.status_code == 201
+    assert response.json()['jobs'][0]['id'] != 'expired-fixture'

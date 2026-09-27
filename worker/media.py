@@ -31,7 +31,7 @@ def friendly_error(stderr):
     message = stderr.lower()
     if any(x in message for x in ('sign in', 'login', 'log in', 'cookies', 'private video', 'confirm you’re not', "confirm you're not")):
         return 'This platform requires sign-in or blocked this request. Try another public video; Velora does not access private content.'
-    if any(x in message for x in ('not available', 'unavailable', 'removed', '404', 'unsupported url')):
+    if any(x in message for x in ('not available', 'unavailable', 'removed', 'not found', '404', 'unsupported url')):
         return 'This video is unavailable or this link type is not supported. Try the original public video link.'
     if '429' in message or 'rate' in message:
         return 'The platform is limiting requests. Please try again later.'
@@ -120,7 +120,8 @@ def formats(info):
         key = resolution
         def rank(fmt):
             return (str(fmt.get('vcodec', '')).startswith(('avc1', 'h264')), fmt.get('dynamic_range') in (None, 'SDR'), fmt.get('fps') or 0, fmt.get('tbr') or 0)
-        if key not in grouped or rank(f) > rank(grouped[key]):
+        # yt-dlp orders formats from lower to higher preference; retain that order on ties.
+        if key not in grouped or rank(f) >= rank(grouped[key]):
             grouped[key] = f
     result = []
     for height, f in sorted(grouped.items(), reverse=True):
@@ -129,7 +130,7 @@ def formats(info):
         conversion = not codec.startswith(('avc1', 'h264')) or f.get('dynamic_range') not in (None, 'SDR')
         size, estimated = size_of(f, duration)
         spec = f['format_id']
-        has_audio = f.get('acodec') not in ('none', None) or best_audio is not None
+        has_audio = True if best_audio is not None or f.get('acodec') not in ('none', None) else (False if f.get('acodec') == 'none' else None)
         if f.get('acodec') == 'none' and best_audio:
             spec += '+' + best_audio['format_id']
             audio_size, audio_estimated = size_of(best_audio, duration)
@@ -138,7 +139,7 @@ def formats(info):
         if size and size > config.MAX_FILE:
             continue
         result.append({'id': str(uuid.uuid4()), 'label': f'{int(height)}p' if height else 'Original', 'height': int(height), 'hasAudio': has_audio, 'ext': 'mp4', 'sourceExt': ext, 'codec': codec, 'requiresConversion': conversion, 'kind': 'video', 'size': size, 'estimated': estimated, 'fps': f.get('fps'), 'spec': spec})
-    if best_audio or any(f.get('acodec') not in ('none', None) for f in usable):
+    if best_audio or any(f.get('acodec') != 'none' for f in usable):
         for ext, kbps in [('mp3', 192), ('m4a', 128)]:
             size = math.ceil(duration * kbps * 1000 / 8) if duration else None
             if size is None or size <= config.MAX_FILE:
@@ -147,7 +148,7 @@ def formats(info):
                 if ext == 'm4a' and best_audio and best_audio.get('ext') == 'm4a':
                     size, estimated = size_of(best_audio, duration)
                     label = 'M4A · Original audio'
-                result.append({'id': str(uuid.uuid4()), 'label': label, 'ext': ext, 'kind': 'audio', 'size': size, 'estimated': estimated, 'spec': best_audio['format_id'] if best_audio else 'bestaudio/best', 'bitrate': kbps})
+                result.append({'id': str(uuid.uuid4()), 'label': label, 'ext': ext, 'kind': 'audio', 'size': size, 'estimated': estimated, 'spec': best_audio['format_id'] if best_audio else 'bestaudio/best', 'bitrate': kbps, 'audioUnconfirmed': not best_audio and not any(f.get('acodec') not in ('none', None) for f in usable)})
     return result
 
 def choose(info, preset):

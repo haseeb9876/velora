@@ -40,8 +40,10 @@ Open http://127.0.0.1:5173. Vite proxies `/api` and `/files` to the worker on po
 - Prepared media is probed for missing tracks and invalid duration; beginning/middle/end decode checks reject detectable broken output. Transcoded output is checked for retained resolution and complete duration.
 - Playlist selection and per-item preparation; default maximum 10 items. Source-platform playlist support varies.
 - Anonymous browser sessions, job ownership checks, queued processing, cancellation, file removal and signed download links.
-- Responsive light/dark UI, original geometric V logo, local fonts, matching PWA icons, offline app shell, persistent installation invitation and Web Share Target where supported.
-- Primary source adapters: YouTube, Facebook, TikTok and Instagram. Extended adapters: Vimeo, Reddit, X and Pinterest. An adapter is not a promise that every URL or source server will permit downloading.
+- Responsive light/dark UI, original geometric V logo, local fonts, matching PWA icons and a complete offline app shell. First-time mobile visitors receive a friendly installation dialog; Not now snoozes it for 24 hours while the install banner remains available. Native installation still requires a user tap; Safari instructions are included.
+- Each production build has a unique version and precached assets. Open, online apps check for updates on launch, focus/resume, reconnect and every minute. Updates apply after a short idle period, defer during active jobs or format selection, preserve the current link and preferences, and coordinate across tabs. A manual Check updates control is available.
+- Searchable download history with status filters and retry for failed/expired files. Retry rechecks source formats and uses the same ownership, queue and rate controls. Video/audio and playback preferences are remembered; app shortcuts open a new download, the library or audio mode. Pasted share text is cleaned to its video URL.
+- Primary source adapters: YouTube, Facebook, TikTok and Instagram. Extended adapters: Vimeo, Reddit, X, Pinterest, Dailymotion, Twitch clips/recordings, Bluesky, LinkedIn and Snapchat Spotlight. The searchable catalog and worker share one explicit platform allowlist. An adapter is not a promise that every URL or source server will permit downloading.
 - Optional Neon storage using the same document schema as SQLite. Media files always live on the Ubuntu worker.
 
 ## Free public beta architecture
@@ -136,9 +138,10 @@ npm run build
 npx playwright install chromium
 npm run test:e2e
 npm run test:pwa
+npm run test:updates
 ```
 
-Backend tests cover URL/network validation, signatures, ownership, queue lifecycle, real yt-dlp media retrieval from an owned fixture, FFmpeg merging and audio conversion. Browser tests use mocked platform responses to test UI behavior deterministically; they do not prove live platform availability.
+Update tests build and serve two real app releases to verify periodic detection, safe activation, draft preservation, cross-tab behavior and offline reopening. Backend tests cover URL/network validation, signatures, ownership, queue lifecycle, real yt-dlp media retrieval from an owned fixture, FFmpeg merging and audio conversion. Browser tests use mocked platform responses to test UI behavior deterministically; they do not prove live platform availability.
 
 ## Maintenance and known limits
 
@@ -155,3 +158,7 @@ Neon connections are checked when borrowed from the pool, and unused connections
 The PWA shell can open offline after an online visit. Media analysis and downloads require connectivity. Installation prompts and receiving shared links vary by browser, especially on iOS.
 
 Before a broader launch, verify source permissions and provider terms, establish a stable worker endpoint, add operational monitoring and backups, verify the brand name, and publish operator/contact details appropriate to your deployment.
+
+Every social URL cannot be guaranteed: adapters depend on public source availability and supported link types. When a platform omits audio metadata, the interface says audio is checked during download instead of incorrectly labeling the video silent. Audio-only attempts fail clearly if the source actually has no audio.
+
+Rapid updates apply to the app code and styles while it is open, online and safe to refresh. Offline or OS-suspended apps update when they return. A device running the previous updater needs to reopen Velora once to receive this release. Home-screen icon/name changes follow the browser's separate manifest-update schedule; no instant OS-wide update is promised.

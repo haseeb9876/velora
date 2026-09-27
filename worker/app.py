@@ -64,6 +64,9 @@ def run_worker():
                 info = media.inspect(job['url'], proxy)
                 job['option'] = dict(media.choose(info, job['preset']), profile=job.get('profile', 'compatible'))
                 job['title'] = info['title']
+                option = job['option']
+                extension = option.get('sourceExt', option['ext']) if job.get('profile') == 'original' else option['ext']
+                job['label'] = option['label'] + ' · ' + extension.upper()
                 save(job)
             def progress(value):
                 value = max(value, job.get('progress', 0))
@@ -284,6 +287,10 @@ def create_jobs(body: JobBody, request: Request, user=Depends(owner)):
         if not entries or len(entries) != len(selected) or len(entries) > config.MAX_PLAYLIST:
             raise HTTPException(422, 'Choose available playlist items within the beta limit.')
         pending = [{'url':e['url'],'title':e['title'],'preset':body.preset,'profile':body.profile,'label':body.preset.upper() if body.preset in ('mp3','m4a') else ('Best available' if body.preset == 'best' else body.preset + 'p or lower')} for e in entries]
+    return enqueue_jobs(pending, request, user)
+
+
+def enqueue_jobs(pending, request, user):
     used = sum(f.stat().st_size for f in config.DOWNLOADS.rglob('*') if f.is_file())
     with lock:
         if used + config.MAX_CONCURRENT * config.MAX_FILE * 3 > config.MAX_STORAGE:
@@ -301,6 +308,19 @@ def create_jobs(body: JobBody, request: Request, user=Depends(owner)):
             jobs_queue.put_nowait(job['id'])
             created.append(public_job(job))
     return {'jobs':created}
+
+@app.post('/api/jobs/{id}/retry', status_code=201)
+def retry_job(id: str, request: Request, user=Depends(owner)):
+    previous = store.get(id, 'job', user)
+    if not previous:
+        raise HTTPException(404, 'This download is no longer in your history. Paste the link again.')
+    expired = previous['status'] == 'ready' and previous.get('expires', float('inf')) <= time.time()
+    if previous['status'] not in ('failed', 'expired', 'cancelled') and not expired:
+        raise HTTPException(409, 'This download is already active or ready to save.')
+    option = previous.get('option', {})
+    preset = previous.get('preset') or (option.get('ext', 'mp3') if option.get('kind') == 'audio' else str(option.get('height') or 'best'))
+    item = {'url': previous['url'], 'title': previous['title'], 'preset': preset, 'profile': previous.get('profile', 'compatible'), 'label': previous['label']}
+    return enqueue_jobs([item], request, user)
 
 @app.get('/api/jobs')
 def get_jobs(user=Depends(owner)):

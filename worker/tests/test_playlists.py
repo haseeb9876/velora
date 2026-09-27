@@ -6,7 +6,7 @@ def test_playlist_selection_is_owned_validated_and_processed(monkeypatch):
     def inspect(url,proxy,playlist=False):
         if playlist:
             return {'kind':'playlist','title':'Test playlist','entries':[{'id':'one','url':'https://youtube.com/watch?v=one','title':'First'},{'id':'two','url':'https://youtube.com/watch?v=two','title':'Second'}]}
-        return {'kind':'video','title':'Resolved title','options':[{'id':'f1','kind':'audio','ext':'mp3','spec':'audio','bitrate':192}]}
+        return {'kind':'video','title':'Resolved title','options':[{'id':'f1','kind':'audio','ext':'mp3','spec':'audio','bitrate':192,'label':'MP3 · 192 kbps'}]}
     def download(job,proxy,update,cancelled,callback):
         folder=service.config.DOWNLOADS/job['id'];folder.mkdir(exist_ok=True)
         path=folder/'media.mp3';path.write_bytes(b'fixture-audio');return path
