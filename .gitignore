@@ -18,3 +18,6 @@ playwright-report/
 .tools/
 .vercel
 .env*
+
+# Cloud VM runtime credentials
+/deploy/cloud.env

@@ -1,0 +1,9 @@
+**
+!deploy/
+!deploy/Dockerfile
+!deploy/container-start.sh
+!worker/
+!worker/*.py
+!worker/requirements.lock
+!shared/
+!shared/platforms.json

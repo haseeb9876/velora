@@ -4,7 +4,7 @@ Live app: https://velora-downloader.vercel.app
 
 Source: https://github.com/haseeb9876/velora
 
-The connected Ubuntu installation is deployed. See [DEPLOYMENT.md](DEPLOYMENT.md) for its services and current URLs. The steps below also support a fresh installation.
+The connected Ubuntu installation is deployed. A cloud migration package is available in [deploy/CLOUD.md](deploy/CLOUD.md); laptop independence is pending cloud provisioning and cutover verification. See [DEPLOYMENT.md](DEPLOYMENT.md) for its services and current URLs. The steps below also support a fresh installation.
 
 A responsive, installable social-video downloader for a small, free beta. React + TypeScript provides the interface; an Ubuntu Python worker uses yt-dlp and FFmpeg to analyze and prepare media. Neon Postgres is optional; local SQLite works immediately with no account or subscription.
 

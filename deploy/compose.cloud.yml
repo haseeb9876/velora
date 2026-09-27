@@ -1,0 +1,67 @@
+name: velora-cloud
+services:
+  worker:
+    image: velora-worker:cloud
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    env_file:
+      - ./cloud.env
+    environment:
+      DATA_DIR: /data
+      BIND_HOST: 127.0.0.1
+      PORT: "8787"
+      TRUST_LOCAL_PROXY: "true"
+    # Linux only. Keeps the API private and lets the existing loopback-only
+    # forwarded-IP trust rule work correctly with Caddy on the same VM.
+    network_mode: host
+    volumes:
+      - ${VELORA_DATA_DIR:-/srv/velora/data}:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    init: true
+    mem_limit: 8g
+    cpus: 1.8
+    pids_limit: 256
+    restart: unless-stopped
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "2"
+
+  https:
+    image: caddy:2-alpine
+    network_mode: host
+    environment:
+      VELORA_HOSTNAME: ${VELORA_HOSTNAME:?Set the public backend hostname}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    restart: unless-stopped
+    depends_on:
+      worker:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "2"
+
+volumes:
+  caddy-data:
+  caddy-config:
