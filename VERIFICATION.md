@@ -63,3 +63,7 @@ This is a deployed small beta, not a guarantee of unrestricted social-platform d
 - The final preview check exposed `Vary: Origin` headers preventing offline module/cache matches. Public precached assets now match by URL independent of that header; the two-release server includes the same header for regression coverage.
 
 - Final automated checks: 49 backend, 22 mobile/desktop UI, 3 real two-release update and 1 production offline PWA check passed (75 total). Production dependency audit reported zero vulnerabilities. The TypeScript/Vite build and whitespace checks passed.
+
+- Public deployment `bf5f5cc` is ready. Actual first-visit popups passed at 320px/390px, responsive layouts passed at 320/390/768/1440px, and the public mobile app reopened offline. `/version.json` returned the correct build with `Cache-Control: no-cache, must-revalidate`.
+- A live public mobile browser analyzed the Snapchat sample in 7.24 seconds; one quality tap automatically saved H.264/AAC MP4 (480 × 880) in 15.48 seconds. Full-file FFmpeg decoding passed and the test job/file was removed. These are sample observations, not universal timing promises.
+- Production screenshots were refreshed, including `docs/mobile-install.png`. The Ubuntu worker and HTTPS connector were active after the worker update; no production job was queued or processing at restart.
